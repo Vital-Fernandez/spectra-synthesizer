@@ -9,4 +9,4 @@ The current development version corresponds to the upgraded work presented in Fe
 ### Prerequisites
 
 The current algorithm requires numpy, pandas and pymc3.
-
+```
