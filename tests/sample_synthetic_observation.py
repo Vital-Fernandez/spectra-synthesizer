@@ -24,6 +24,9 @@ objIons = ss.IonEmissivity(ftau_file_path=objParams['ftau_file'],
                            tempGrid=objParams['temp_grid'],
                            denGrid=objParams['den_grid'])
 
+# Load coefficients for emissivity fittings:
+objIons.load_emis_coeffs(objLinesDF.index.values, objParams)
+
 objChem = ss.DirectMethod(linesDF=objLinesDF,
                           highTempIons=objParams['high_temp_ions_list'])
 
@@ -34,13 +37,11 @@ obj1_model.declare_model_data(objLinesDF, objIons, objRed, objChem)
 # Set parameters priors
 obj1_model.priors_configuration(objParams['parameter_list'], prior_conf_dict=objParams)
 
-
-
 # Declare simulation inference model
-
+obj1_model.inference_model_emission()
 
 # Run the simulation
-
+print('PERO ESTO VA BIEN?')
 
 # Plot the results
 

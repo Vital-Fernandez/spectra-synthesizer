@@ -22,7 +22,7 @@ class EmissivitySurfaceFitter():
         self.tempGridFlatten = None
         self.denGridFlatten = None
         self.emisGridDict = None
-        self.emisCoeffs = None
+        self.emisCoeffs = {} # TODO put this one in the superior one
 
         # Class with the tensor operations of this class
         # TODO we should read this from the xlsx file
@@ -94,7 +94,6 @@ class EmissivitySurfaceFitter():
         labels_list = linesDF.index.values
 
         # Dictionary to store the emissivity surface coeffients
-        self.emisCoeffs = {}
         for i in range(labels_list.size):
             lineLabel = labels_list[i]
 
@@ -148,8 +147,17 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
         return ionDict
 
-    def computeEmissivityGrid(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r', norm_pynebCode=4861,
-                              linesDb=None):
+    def load_emis_coeffs(self, line_list, objParams, verbose=True):
+
+        for line in line_list:
+            if line in objParams:
+                self.emisCoeffs[line] = objParams[line]
+            else:
+                if verbose:
+                    print(f'-- Warning: No emissivity coefficients available for line {line}')
+        return
+
+    def computeEmissivityGrid(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r', norm_pynebCode=4861, linesDb=None):
 
         labels_list = linesDF.index.values
         ions_list = linesDF.ion.values
@@ -157,8 +165,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
         blended_list = linesDF.blended.values
 
         # Generate a grid with the default reference line
-        Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempGridFlatten, self.denGridFlatten,
-                                                               wave=norm_pynebCode, product=False)
+        Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempGridFlatten, self.denGridFlatten, wave=norm_pynebCode, product=False)
 
         self.emisGridDict = {}
         for i in range(len(labels_list)):

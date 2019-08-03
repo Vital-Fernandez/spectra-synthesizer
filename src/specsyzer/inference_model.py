@@ -1,5 +1,6 @@
 import pymc3
 import theano.tensor as tt
+import numpy as np
 from data_reading import save_MC_fitting, load_MC_fitting, parseObjData
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_TSIII_relation
@@ -27,15 +28,15 @@ class SpectraSynthesizer:
     def __init__(self):
 
         self.modelParameters = None
-        self.priorDict = {}
+        self.priorDict = {} # TODO This one must include the different coordinates
 
         self.emissionFluxes = None
         self.emissionErr = None
 
-        self.obsIons = None
+        self.obsIons = None # TODO Assign later
         self.emissionCheck = False
 
-        self.linesRangeArray = None
+        self.linesRangeArray = None # TODO Assign later
 
         self.pymc3Dist = {'Normal': pymc3.Normal, 'Lognormal': pymc3.Lognormal}
 
@@ -46,6 +47,7 @@ class SpectraSynthesizer:
         self.lineLabels = objLinesDF.index.values
         self.lineIons = objLinesDF.ion.values
         self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.obsWave.values)
+        self.linesRangeArray = np.arange(self.lineLabels.size)
 
         self.emissionFluxes = objLinesDF.obsFlux.values
         self.emissionErr = objLinesDF.obsFluxErr.values
@@ -58,8 +60,9 @@ class SpectraSynthesizer:
         self.ftauCoef = ion_model.ftau_coeffs
 
         self.indcsLabelLines = chemistry_model.indcsLabelLines
-        self.indcsIonLines = chemistry_model.indcsIonLines['He1r']
+        self.indcsIonLines = chemistry_model.indcsIonLines
         self.highTemp_check = chemistry_model.indcsHighTemp
+        self.obsIons = chemistry_model.obsAtoms
 
         # Establish minimum error on lines:
         # TODO Should this operation be at the point we import the fluxes?
@@ -67,7 +70,6 @@ class SpectraSynthesizer:
             err_fraction = self.emissionErr / self.emissionFluxes
             idcs_smallErr = err_fraction < minErr
             self.emissionFluxes = minErr * self.obsLineFluxes[idcs_smallErr]
-
 
         if verbose:
             print(f'\n- Input lines ({self.lineLabels.size})')
@@ -106,9 +108,9 @@ class SpectraSynthesizer:
         return
 
     def set_prior(self, param):
-        return self.pymc3Dist[self.priorDict[0]](param, self.priorDict[1], self.priorDict[2]) * self.priorDict[3]
+        return self.pymc3Dist[self.priorDict[param][0]](param, self.priorDict[param][1], self.priorDict[param][2]) * self.priorDict[param][3]
 
-    def inference_model_emission(self, flux, equations, include_reddening=True, include_Thigh_prior=True):
+    def inference_model_emission(self, include_reddening=True, include_Thigh_prior=True):
 
         # Container to store the synthetic line fluxes
         fluxTensor = tt.zeros(self.lineLabels.size)
@@ -118,16 +120,17 @@ class SpectraSynthesizer:
             # Gas priors
             n_e = self.set_prior('n_e')
             T_low = self.set_prior('T_low')
-            cHbeta = self.set_prior('cHbeta')
+            cHbeta = self.set_prior('cHbeta') # TODO add the a mechanism to preload a reddening
             T_high = self.set_prior('T_high') if include_Thigh_prior else TOIII_TSIII_relation(T_low)
 
             # Abundance priors
             abund_dict = {'H1r': 1.0}
             for ion in self.obsIons:
-                abund_dict[ion] = self.set_prior(ion)
+                if ion != 'H1r': # TODO check right place to exclude the hydrogen atoms
+                    abund_dict[ion] = self.set_prior(ion)
 
             # Specific transition priors
-            tau = self.set_prior('tau') if self.elementCheck['Her1'] else 0.0
+            tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
 
             # Loop through the lines and compute the synthetic fluxes
             for i in self.linesRangeArray:
@@ -146,7 +149,7 @@ class SpectraSynthesizer:
                                                 emis_func=emisEq,
                                                 indcsLabelLines=self.indcsLabelLines,
                                                 He1r_check=self.indcsIonLines['He1r'],
-                                                HighTemp_check=self.highTemp_check.indcsHighTemp)
+                                                HighTemp_check=self.highTemp_check)
 
                 # Assign the new value in the tensor
                 fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
