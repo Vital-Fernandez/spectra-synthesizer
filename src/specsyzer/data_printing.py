@@ -1,19 +1,65 @@
-import numpy as np
 import corner
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib import cm
 from matplotlib import rcParams
 from matplotlib import colors
 from matplotlib.mlab import detrend_mean
-from mpl_toolkits.mplot3d import Axes3D
-from numpy import array, reshape, empty, ceil, percentile, median, nan, flatnonzero, core
-# from lib.Plotting_Libraries.dazer_plotter import Plot_Conf
-# from lib.Plotting_Libraries.sigfig import round_sig
-# from lib.CodeTools.File_Managing_Tools import Pdf_printer
-from scipy import stats
-from scipy.integrate import simps
+from numpy import reshape, percentile, median
+from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Section, Tabu, Table, LongTable
+from functools import partial
+from collections import Sequence
 
+latex_labels = {'y_plus': r'$y^{+}$',
+             'He1_abund': r'$y^{+}$',
+             'He2_abund': r'$y^{++}$',
+             'Te': r'$T_{e}$',
+             'T_low': r'$T_{low}$',
+             'T_high': r'$T_{high}$',
+             'T_He': r'$T_{He}$',
+             'n_e': r'$n_{e}$',
+             'cHbeta': r'$c(H\beta)$',
+             'tau': r'$\tau$',
+             'xi': r'$\xi$',
+             'ChiSq': r'$\chi^{2}$',
+             'ChiSq_Recomb': r'$\chi^{2}_{Recomb}$',
+             'ChiSq_Metals': r'$\chi^{2}_{Metals}$',
+             'ChiSq_O': r'$\chi^{2}_{O}$',
+             'ChiSq_S': r'$\chi^{2}_{S}$',
+             'S2_abund': r'$S^{+}$',
+             'He1r': r'$y^{+}$',
+             'He2r': r'$y^{2+}$',
+             'S3_abund': r'$S^{2+}$',
+             'O2_abund': r'$O^{+}$',
+             'O3_abund': r'$O^{2+}$',
+             'S3_abund': r'$S^{2+}$',
+             'O2_abund': r'$O^{+}$',
+             'O3_abund': r'$O^{2+}$',
+             'N2_abund': r'$N^{+}$',
+             'Ar3_abund': r'$Ar^{2+}$',
+             'Ar4_abund': r'$Ar^{3+}$',
+             'S2': r'$S^{+}$',
+             'S3': r'$S^{2+}$',
+             'O2': r'$O^{+}$',
+             'O3': r'$O^{2+}$',
+             'N2': r'$N^{+}$',
+             'Ar3': r'$Ar^{2+}$',
+             'Ar4': r'$Ar^{3+}$',
+             'Ar_abund': r'$\frac{ArI}{HI}$',
+             'He_abund': r'$\frac{HeI}{HI}$',
+             'O_abund': r'$\frac{OI}{HI}$',
+             'N_abund': r'$\frac{NI}{HI}$',
+             'S_abund': r'$\frac{SI}{HI}$',
+             'Ymass_O': r'$Y_{O}$',
+             'Ymass_S': r'$Y_{S}$',
+             'calcFluxes_Op': 'Line fluxes',
+             'z_star': r'$z_{\star}$',
+             'sigma_star': r'$\sigma_{\star}$',
+             'Av_star': r'$Av_{\star}$',
+             'chiSq_ssp': r'$\chi^{2}_{SSP}$',
+             'ICF_SIV': r'$ICF\left(S^{3+}\right)$'
+             }
 
 def label_formatting(line_label):
     label = line_label.replace('_', '\,\,')
@@ -31,9 +77,9 @@ def _histplot_bins(column, bins=100):
     return range(col_min, col_max + 2, max((col_max - col_min) // bins, 1))
 
 
-def numberStringFormat(value):
+def numberStringFormat(value, cifras = 4):
     if value > 0.001:
-        newFormat = str(round_sig(value, 4))
+        newFormat = str(round(value, cifras))
     else:
         newFormat = r'${:.3e}$'.format(value)
 
@@ -71,370 +117,381 @@ def printSimulationData(model, priorsDict, lineLabels, lineFluxes, lineErr, line
     return
 
 
-class Basic_plots(Plot_Conf):
+class FigConf:
 
     def __init__(self):
 
-        # Class with plotting tools
-        Plot_Conf.__init__(self)
+        # Default sizes for computer
+        self.defaultFigConf = {'figure.figsize': (14, 8), 'legend.fontsize': 15, 'axes.labelsize': 20,
+                               'axes.titlesize': 24, 'xtick.labelsize': 14, 'ytick.labelsize': 14}
 
-    def prefit_input(self):
+        # rcParams.update(sizing_dict)
 
-        size_dict = {'figure.figsize': (20, 14), 'axes.labelsize': 16, 'legend.fontsize': 18}
-        self.FigConf(plotSize=size_dict)
+    def gen_colorList(self, vmin=0.0, vmax=1.0, color_palette=None):
 
-        # Input continuum
-        self.data_plot(self.inputWave, self.inputContinuum, 'Input object continuum')
+        colorNorm = colors.Normalize(vmin, vmax)
+        cmap = cm.get_cmap(name=color_palette)
+        # return certain color
+        # self.cmap(self.colorNorm(idx))
 
-        # Observed continuum
-        self.data_plot(self.obj_data['wave_resam'], self.obj_data['flux_norm'], 'Observed spectrum', linestyle=':')
+        return colorNorm, cmap
 
-        # Nebular contribution removed if available
-        self.data_plot(self.nebDefault['wave_neb'], self.nebDefault['synth_neb_flux'], 'Nebular contribution removed',
-                       linestyle='--')
+    def FigConf(self, plotStyle=None, plotSize='medium', Figtype='Single', AxisFormat=111, n_columns=None, n_rows=None,
+                n_colors=None, color_map=None, axis_not=None):
 
-        # #In case of a synthetic observation:
-        # if 'neb_SED' in self.obj_data:
-        #     self.data_plot(self.input_wave, self.obj_data['neb_SED']['neb_int_norm'], 'Nebular continuum')
-        #     title_label = 'Observed spectrum'
-        # if 'stellar_flux' in self.obj_data:
-        #     self.data_plot(self.obj_data['obs_wave'], self.obj_data['stellar_flux']/self.obj_data['normFlux_coeff'], 'Stellar continuum')
-        #     self.data_plot(self.obj_data['obs_wave'], self.obj_data['stellar_flux_err']/ self.obj_data['normFlux_coeff'], 'Stellar continuum with uncertainty', linestyle=':')
-        #     title_label = 'Synthetic spectrum'
+        # Set the figure format before creating it
+        self.define_format(plotStyle, plotSize)
 
-        self.FigWording(xlabel='Wavelength $(\AA)$', ylabel='Observed flux',
-                        title='Observed spectrum and prefit input continuum')
+        if Figtype == 'Single':
 
-        return
+            if AxisFormat == 111:
+                self.Fig = plt.figure()
+                self.Axis = self.Fig.add_subplot(AxisFormat)
+            else:
+                self.Fig, self.Axis = plt.subplots(n_rows, n_columns)
+                self.Axis = self.Axis.ravel()
 
-    def prefit_comparison(self, obj_ssp_fit_flux):
+        elif Figtype == 'Posteriors':
+            self.Fig = plt.figure()
+            AxisFormat = int(str(n_columns) + '11')
+            self.Axis = self.Fig.add_subplot(AxisFormat)
 
-        size_dict = {'figure.figsize': (20, 14), 'axes.labelsize': 22, 'legend.fontsize': 22}
-        self.FigConf(plotSize=size_dict)
+        elif Figtype == 'grid':
+            self.Fig, self.Axis = plt.subplots(n_rows, n_columns)
+            if (n_rows * n_columns) != 1:
+                self.Axis = self.Axis.ravel()
+            else:
+                self.Axis = [self.Axis]
 
-        self.data_plot(self.inputWave, self.obj_data['flux_norm'], 'Object normed flux')
-        self.data_plot(self.inputWave, self.nebDefault['synth_neb_flux'], 'Nebular continuum')
-        self.data_plot(self.inputWave, obj_ssp_fit_flux + self.nebDefault['synth_neb_flux'], 'Prefit continuum output',
-                       linestyle='-')
-        self.Axis.set_yscale('log')
-        self.FigWording(xlabel='Wavelength $(\AA)$', ylabel='Normalised flux', title='')
+        elif Figtype == 'tracePosterior':
+            self.Fig, self.Axis = plt.subplots(n_rows, n_columns)
 
-        return
+        elif Figtype == 'Grid':
+            frame1 = plt.gca()
+            frame1.axes.xaxis.set_visible(False)
+            frame1.axes.yaxis.set_visible(False)
+            gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1])
+            self.Fig, self.Axis = plt.subplots(n_rows, n_columns)
+            self.Axis = self.Axis.ravel()
 
-    def prefit_ssps(self, sspPrefitCoeffs):
+        elif Figtype == 'Grid_size':
+            self.Fig = plt.figure()
+            gs = gridspec.GridSpec(n_rows, n_columns, height_ratios=[2.5, 1])
+            self.ax1 = self.Fig.add_subplot(gs[0, :])
+            self.ax2 = self.Fig.add_subplot(gs[1, :])
 
-        size_dict = {'figure.figsize': (20, 14), 'axes.labelsize': 22, 'legend.fontsize': 22}
-        self.FigConf(plotSize=size_dict)
-
-        # TODO This function should go to my collection
-        ordinal_generator = lambda n: "%d%s" % (n, "tsnrhtdd"[(n / 10 % 10 != 1) * (n % 10 < 4) * n % 10::4])
-        ordinal_bases = [ordinal_generator(n) for n in range(len(sspPrefitCoeffs))]
-
-        counter = 0
-        for i in range(len(self.onBasesFluxNorm)):
-            if sspPrefitCoeffs[i] > self.lowlimit_sspContribution:
-                counter += 1
-                label_i = '{} base: flux coeff {}, norm coeff {:.2E}'.format(ordinal_bases[i], sspPrefitCoeffs[i],
-                                                                             self.onBasesFluxNormCoeffs[i])
-                label_i = '{} base'.format(ordinal_bases[i])
-                self.data_plot(self.onBasesWave, self.onBasesFluxNorm[i], label_i)
-
-        self.area_fill(self.ssp_lib['norm_interval'][0], self.ssp_lib['norm_interval'][1],
-                       'Norm interval: {} - {}'.format(self.ssp_lib['norm_interval'][0],
-                                                       self.ssp_lib['norm_interval'][1]), alpha=0.5)
-
-        title = 'SSP prefit contributing stellar populations {}/{}'.format(
-            (sspPrefitCoeffs > self.lowlimit_sspContribution).sum(), len(self.onBasesFluxNorm))
-        self.FigWording(xlabel='Wavelength $(\AA)$', ylabel='Normalised flux', title='')
+        if axis_not == 'sci':
+            plt.ticklabel_format(style='sci', axis='x', scilimits=(0, 0))
 
         return
 
-    def continuumFit(self, db_dict):
+    def FigWording(self, xlabel, ylabel, title, loc='best', Expand=False, XLabelPad=0.0, YLabelPad=0.0, Y_TitlePad=1.02,
+                   cb_title=None, sort_legend=False, ncols_leg=1, graph_axis=None):
 
-        outputSSPsCoefs, Av_star = np.median(db_dict['w_i']['trace'], axis=0), db_dict['Av_star']['median']
-        outputSSPsCoefs_std, Av_star_std = np.std(db_dict['w_i']['trace'], axis=0), db_dict['Av_star'][
-            'standard deviation']
-
-        stellarFit = outputSSPsCoefs.dot(self.onBasesFluxNorm) * np.power(10, -0.4 * Av_star * self.Xx_stellar)
-        stellarPrefit = self.sspPrefitCoeffs.dot(self.onBasesFluxNorm) * np.power(10, -0.4 * self.stellarAv_prior[
-            0] * self.Xx_stellar)
-        nebularFit = self.nebDefault['synth_neb_flux']
-
-        stellarFit_upper = (outputSSPsCoefs + outputSSPsCoefs_std).dot(self.onBasesFluxNorm) * np.power(10, -0.4 * (
-                    Av_star - Av_star_std) * self.Xx_stellar) + nebularFit
-        stellarFit_lower = (outputSSPsCoefs - outputSSPsCoefs_std).dot(self.onBasesFluxNorm) * np.power(10, -0.4 * (
-                    Av_star + Av_star_std) * self.Xx_stellar) + nebularFit
-
-        size_dict = {'figure.figsize': (20, 14), 'axes.labelsize': 16, 'legend.fontsize': 18}
-        self.FigConf(plotSize=size_dict)
-
-        self.data_plot(self.inputWave, self.inputContinuum, 'Object normed flux')
-        self.data_plot(self.inputWave, nebularFit, 'Nebular continuum')
-        self.data_plot(self.inputWave, stellarFit + nebularFit, 'Continuum fit', color='tab:green')
-        self.Axis.fill_between(self.inputWave, stellarFit_lower, stellarFit_upper, color='tab:green', alpha=0.5)
-        self.data_plot(self.inputWave, stellarPrefit + nebularFit, 'prefit fit', color='tab:red', linestyle=':')
-
-        self.Axis.set_yscale('log')
-        self.FigWording(xlabel='Wavelength $(\AA)$', ylabel='Observed flux', title='SSPs continuum prefit')
-
-        return
-
-    def masked_observation(self):
-
-        size_dict = {'figure.figsize': (20, 14), 'axes.labelsize': 16, 'legend.fontsize': 16}
-        self.FigConf(plotSize=size_dict)
-
-        nLineMasks = self.boolean_matrix.shape[0]
-        inputContinuum = self.obj_data['flux_norm'] - self.nebDefault['synth_neb_flux']
-        self.data_plot(self.inputWave, inputContinuum, 'Unmasked input continuum')
-        self.data_plot(self.inputWave, inputContinuum * np.invert(self.object_mask), 'Object mask', linestyle=':')
-
-        for i in range(nLineMasks):
-            self.data_plot(self.inputWave, inputContinuum * self.boolean_matrix[i, :],
-                           'Line mask ' + self.obj_data['lineLabels'][i], linestyle='--')
-
-        self.Axis.set_xlabel('Wavelength $(\AA)$')
-        self.Axis.set_ylabel('Observed flux')
-        self.Axis.set_title('Spectrum masks')
-        self.Axis.set_xscale('log')
-        self.Axis.legend(bbox_to_anchor=(0.95, 1), loc=2, borderaxespad=0.)
-
-        return
-
-    def resampled_observation(self):
-
-        size_dict = {'figure.figsize': (20, 14), 'axes.labelsize': 16, 'legend.fontsize': 18}
-        self.FigConf(plotSize=size_dict)
-
-        self.data_plot(self.obj_data['obs_wavelength'], self.obj_data['obs_flux'], 'Observed spectrum')
-        self.data_plot(self.obj_data['wave_resam'], self.obj_data['flux_resam'], 'Resampled spectrum', linestyle='--')
-        self.data_plot(self.obj_data['wave_resam'], self.obj_data['flux_norm'] * self.obj_data['normFlux_coeff'],
-                       r'Normalized spectrum $\cdot$ {:.2E}'.format(self.obj_data['normFlux_coeff']), linestyle=':')
-        self.area_fill(self.obj_data['norm_interval'][0], self.obj_data['norm_interval'][1],
-                       'Norm interval: {} - {}'.format(self.obj_data['norm_interval'][0],
-                                                       self.obj_data['norm_interval'][1]), alpha=0.5)
-
-        self.FigWording(xlabel='Wavelength $(\AA)$', ylabel='Observed flux', title='Resampled observation')
-
-        return
-
-    def linesGrid(self, linesDf, wave, flux, plotAddress):
-
-        # TODO dangerous function which should not be here
-        # Get number of lines to generate the figure
-        lineLabels = linesDf.index.values
-        nLabels = lineLabels.size
-        if nLabels <= 56:
-            nRows, nColumns = 7, 8
+        if graph_axis == None:
+            Axis = self.Axis
         else:
-            nRows, nColumns = 8, 8
+            Axis = graph_axis
 
-        # Generate figure
-        size_dict = {'figure.figsize': (30, 20), 'axes.titlesize': 12, 'axes.labelsize': 10, 'legend.fontsize': 10}
-        self.FigConf(plotSize=size_dict, Figtype='Grid', n_columns=nColumns, n_rows=nRows)
+        Axis.set_xlabel(xlabel)
+        Axis.set_ylabel(ylabel)
+        Axis.set_title(title, y=Y_TitlePad)
 
-        # Get line regions
-        wavesMatrix = linesDf.loc[:, 'w1':'w6'].values
-        wavesIdcs = np.searchsorted(wave, wavesMatrix)
-        idcsLines = (wave[wavesIdcs[:, 2]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 3]])
-        idcsContinua = ((wave[wavesIdcs[:, 0]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 1]])) | (
-                    (wave[wavesIdcs[:, 4]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 5]]))
-        idcsRedContinuum = ((wave[wavesIdcs[:, 0]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 1]]))
-        idcsBlueContinuum = ((wave[wavesIdcs[:, 4]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 5]]))
+        if (XLabelPad != 0) or (YLabelPad != 0):
+            Axis.xaxis.labelpad = XLabelPad
+            Axis.yaxis.labelpad = YLabelPad
 
-        # Loop through the line and plot them
-        for i in range(nLabels):
+        if cb_title != None:
+            self.cb.set_label(cb_title, fontsize=18)
 
-            lineLabel = lineLabels[i]
-            lineType = linesDf.iloc[i].region_label
+        self.legend_conf(Axis, loc, sort_legend=sort_legend, ncols=ncols_leg)
 
-            # Get line_i wave and continua
-            lineWave, lineFlux = wave[idcsLines[:, i]], flux[idcsLines[:, i]]
-            continuaWave, continuaFlux = wave[idcsContinua[:, i]], flux[idcsContinua[:, i]]
-            continuaRedWave, continuaRedFlux = wave[idcsRedContinuum[:, i]], flux[idcsRedContinuum[:, i]]
-            continuaBlueWave, continuaBlueFlux = wave[idcsBlueContinuum[:, i]], flux[idcsBlueContinuum[:, i]]
-            lineRes = lineWave[1] - lineWave[0]  # TODO need to understand this better
+    def legend_conf(self, Axis=None, loc='best', sort_legend=False, ncols=1):
 
-            # Compute linear line continuum and get the standard deviation on the continuum
-            slope, intercept, r_value, p_value, std_err = stats.linregress(continuaWave, continuaFlux)
-            linearLineContinua = lineWave * slope + intercept
+        if Axis == None:
+            Axis = self.Axis
 
-            # lineFlux_i = linesDf.loc[lineLabel, 'line_Flux'].nominal_value
-            # lineFlux_iSimps = simps(lineFlux, lineWave) - simps(linearLineContinua, lineWave)
-            # lineFlux_iSum = (lineFlux.sum() - linearLineContinua.sum()) * lineRes
+        Axis.legend(loc=loc, ncol=ncols)
 
-            # Excluding Hbeta
-            recombCheck = True if (('H1' in lineLabel) or ('He1' in lineLabel) or ('He2' in lineLabel)) and (
-                        lineLabel != 'H1_4861A') and ('_w' not in lineLabel) else False
-            blendedCheck = True if (lineType is not 'continuum_mask') and (lineType != 'None') else False
-            # print i, lineLabels[i], recombCheck, blendedCheck #linesDf.iloc[i].obs_flux, simps(lineFlux, lineWave), lineFlux.sum()
+        # Security checks to avoid empty legends
+        if Axis.get_legend_handles_labels()[1] != None:
 
+            if len(Axis.get_legend_handles_labels()[1]) != 0:
+                Old_Handles, Old_Labels = Axis.get_legend_handles_labels()
 
-
-            # # Add flux for isolated recombination lines
-            # if recombCheck and blendedCheck is False:
-            #     # Assign new values
-            #     fluxContinuum = linearLineContinua.sum() * lineRes
-            #     linesDf.loc[lineLabel, 'obs_flux'] = linesDf.iloc[i].obs_flux + fluxContinuum
-            #
-            #     self.Axis[i].plot(lineWave, linearLineContinua, color='tab:green')
-            #
-            # # Add flux for blended recombination lines
-            # if recombCheck and blendedCheck:
-            #     muLine, sigmaLine = linesDf.iloc[i].mu, linesDf.iloc[i].sigma
-            #     lineHalfWidth = 3 * sigmaLine
-            #     w3, w4 = muLine - lineHalfWidth, muLine + lineHalfWidth
-            #     idx3, idx4 = np.searchsorted(wave, [w3, w4])
-            #     idcsLines_trim = (wave[idx3] <= wave) & (wave <= wave[idx4])
-            #     lineWaveTrim, linearLineContinuaTrim = wave[idcsLines_trim], wave[idcsLines_trim] * slope + intercept
-            #     fluxContinuum = linearLineContinuaTrim.sum() * lineRes
-            #
-            #     # Assign new values
-            #     linesDf.loc[lineLabel, 'obs_flux'] = linesDf.iloc[i].obs_flux + fluxContinuum
-            #     linesDf.loc[lineLabel, 'w3'], linesDf.loc[lineLabel, 'w4'] = w3, w4
-            #
-            #     # Generate the plot
-            #     self.Axis[i].plot(lineWaveTrim, linearLineContinuaTrim, color='tab:purple')
-
-            # Adjust the flux in N2_6548
-            if lineLabel == 'N2_6548A':
-                if linesDf.loc[lineLabel, 'region_label'] != 'None':
-                    linesDf.loc[lineLabel, 'obs_fluxErr'] = linesDf.loc['N2_6584A', 'obs_fluxErr']
-                    if (linesDf.loc['N2_6548A', 'obs_fluxErr'] / linesDf.loc['N2_6548A', 'obs_flux']) > 0.1:
-                        linesDf.loc['N2_6548A', 'obs_fluxErr'] = linesDf.loc['N2_6548A', 'obs_flux'] * 0.1
-                    if (linesDf.loc['N2_6584A', 'obs_fluxErr'] / linesDf.loc['N2_6584A', 'obs_flux']) > 0.1:
-                        linesDf.loc['N2_6584A', 'obs_fluxErr'] = linesDf.loc['N2_6584A', 'obs_flux'] * 0.1
-
-            # Plot the data
-            self.Axis[i].plot(continuaRedWave, continuaRedFlux, color='tab:orange')
-            self.Axis[i].plot(continuaBlueWave, continuaBlueFlux, color='tab:orange')
-            self.Axis[i].plot(lineWave, lineFlux, color='tab:blue')
-
-            # Format the plot
-            self.Axis[i].get_yaxis().set_visible(False)
-            self.Axis[i].set_yticks([])
-            self.Axis[i].get_xaxis().set_visible(False)
-            self.Axis[i].set_xticks([])
-            self.Axis[i].set_yscale('log')
-
-            # Wording plot
-            self.Axis[i].set_title(lineLabels[i])
-
-        # Plot the data
-        plt.savefig(plotAddress, dpi=200, bbox_inches='tight')
+                if sort_legend:
+                    labels, handles = zip(*sorted(zip(Old_Labels, Old_Handles), key=lambda t: t[0]))
+                    Handles_by_Label = dict(zip(labels, handles))
+                    Axis.legend(Handles_by_Label.values(), Handles_by_Label.keys(), loc=loc, ncol=ncols)
+                else:
+                    Handles_by_Label = dict(zip(Old_Labels, Old_Handles))
+                    Axis.legend(Handles_by_Label.values(), Handles_by_Label.keys(), loc=loc, ncol=ncols)
 
         return
 
-    def linesGrid_noContinuum(self, linesDf, wave, flux, plotAddress):
-        # Get number of lines to generate the figure
-        lineLabels = linesDf.index.values
-        nLabels = lineLabels.size
-        if nLabels <= 56:
-            nRows, nColumns = 7, 8
+    def bayesian_legend_conf(self, Axis, loc='best', fontize=None, edgelabel=False):
+        # WARNING: THIS DOES NOT WORK WITH LEGEND RAVELIN
+
+        if Axis.get_legend_handles_labels()[1] != None:
+            Old_Handles, Old_Labels = Axis.get_legend_handles_labels()
+            Handles_by_Label = dict(zip(Old_Labels, Old_Handles))
+
+            Hl = zip(Handles_by_Label.values(), Handles_by_Label.keys())
+
+            New_Handles, New_labels = zip(*Hl)
+
+            myLegend = Axis.legend(New_Handles, New_labels, loc=loc, prop={'size': 12}, scatterpoints=1, numpoints=1)
+
+            if fontize != None:
+
+                Leg_Frame = myLegend.get_frame()
+                Leg_Frame.set_facecolor(self.Color_Vector[0])
+                Leg_Frame.set_edgecolor(self.Color_Vector[1])
+
+                for label in myLegend.get_texts():
+                    label.set_fontsize('large')
+
+                for label in myLegend.get_lines():
+                    label.set_linewidth(1.5)
+
+                for text in myLegend.get_texts():
+                    text.set_color(self.Color_Vector[1])
+
+            if edgelabel:
+                Leg_Frame = myLegend.get_frame()
+                Leg_Frame.set_edgecolor('black')
+
+    def savefig(self, output_address, extension='.png', reset_fig=True, pad_inches=0.2, resolution=300.0):
+
+        plt.savefig(output_address + extension, dpi=resolution, bbox_inches='tight')
+
+        return
+
+
+class PdfPrinter():
+
+    def __init__(self):
+
+        self.pdf_type = None
+        self.pdf_geometry_options = {'right': '1cm',
+                                     'left': '1cm',
+                                     'top': '1cm',
+                                     'bottom': '2cm'}
+
+        # TODO add dictionary with numeric formats for tables depending on the variable
+
+    def create_pdfDoc(self, fname, pdf_type='graphs', geometry_options=None, document_class=u'article'):
+
+        # TODO it would be nicer to create pdf object to do all these things
+
+        self.pdf_type = pdf_type
+
+        # Update the geometry if necessary (we coud define a dictionary distinction)
+        if pdf_type == 'graphs':
+            pdf_format = {'landscape': 'true'}
+            self.pdf_geometry_options.update(pdf_format)
+
+        elif pdf_type == 'table':
+            pdf_format = {'landscape': 'true',
+                          'paperwidth': '30in',
+                          'paperheight': '30in'}
+            self.pdf_geometry_options.update(pdf_format)
+
+        if geometry_options is not None:
+            self.pdf_geometry_options.update(geometry_options)
+
+        # Generate the doc
+        self.pdfDoc = Document(fname, documentclass=document_class, geometry_options=self.pdf_geometry_options)
+
+        if pdf_type == 'table':
+            self.pdfDoc.packages.append(Package('preview', options=['active', 'tightpage', ]))
+            self.pdfDoc.packages.append(Package('hyperref', options=['unicode=true', ]))
+            self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
+            self.pdfDoc.packages.append(Package('nicefrac'))
+            self.pdfDoc.packages.append(
+                Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+
+        elif pdf_type == 'longtable':
+            self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
+
+    def pdf_create_section(self, caption, add_page=False):
+
+        with self.pdfDoc.create(Section(caption)):
+            if add_page:
+                self.pdfDoc.append(NewPage())
+
+    def add_page(self):
+
+        self.pdfDoc.append(NewPage())
+
+        return
+
+    def pdf_insert_image(self, image_address, fig_loc='htbp', width=r'1\textwidth'):
+
+        with self.pdfDoc.create(Figure(position='h!')) as fig_pdf:
+            fig_pdf.add_image(image_address, NoEscape(width))
+
+        return
+
+    def pdf_insert_table(self, column_headers=None, table_format=None, addfinalLine=True):
+
+        # Set the table format
+        if table_format is None:
+            table_format = 'l' + 'c' * (len(column_headers) - 1)
+
+        # Case we want to insert the table in a pdf
+        if self.pdf_type != None:
+
+            if self.pdf_type == 'table':
+                self.pdfDoc.append(NoEscape(r'\begin{preview}'))
+
+                # Initiate the table
+                with self.pdfDoc.create(Tabu(table_format)) as self.table:
+                    if column_headers != None:
+                        self.table.add_hline()
+                        self.table.add_row(map(str, column_headers), escape=False, strict=False)
+                        if addfinalLine:
+                            self.table.add_hline()
+
+            elif self.pdf_type == 'longtable':
+
+                # Initiate the table
+                with self.pdfDoc.create(LongTable(table_format)) as self.table:
+                    if column_headers != None:
+                        self.table.add_hline()
+                        self.table.add_row(map(str, column_headers), escape=False)
+                        if addfinalLine:
+                            self.table.add_hline()
+
+        # Table .tex without preamble
         else:
-            nRows, nColumns = 8, 8
+            self.table = Tabu(table_format)
+            if column_headers != None:
+                self.table.add_hline()
+                self.table.add_row(map(str, column_headers), escape=False)
+                if addfinalLine:
+                    self.table.add_hline()
 
-        # Generate figure
-        size_dict = {'figure.figsize': (30, 20), 'axes.titlesize': 12, 'axes.labelsize': 10, 'legend.fontsize': 10}
-        self.FigConf(plotSize=size_dict, Figtype='Grid', n_columns=nColumns, n_rows=nRows)
+    def pdf_insert_longtable(self, column_headers=None, table_format=None):
 
-        # Get line regions
-        wavesMatrix = linesDf.loc[:, 'w1':'w6'].values
-        wavesIdcs = np.searchsorted(wave, wavesMatrix)
-        idcsLines = (wave[wavesIdcs[:, 2]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 3]])
-        idcsContinua = ((wave[wavesIdcs[:, 0]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 1]])) | (
-                    (wave[wavesIdcs[:, 4]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 5]]))
-        idcsRedContinuum = ((wave[wavesIdcs[:, 0]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 1]]))
-        idcsBlueContinuum = ((wave[wavesIdcs[:, 4]] <= wave[:, None]) & (wave[:, None] <= wave[wavesIdcs[:, 5]]))
+        # Set the table format
+        if table_format is None:
+            table_format = 'l' + 'c' * (len(column_headers) - 1)
 
-        # Loop through the line and plot them
-        for i in range(nLabels):
+        # Case we want to insert the table in a pdf
+        if self.pdf_type != None:
 
-            lineLabel = lineLabels[i]
-            lineType = linesDf.iloc[i].region_label
+            if self.pdf_type == 'table':
+                self.pdfDoc.append(NoEscape(r'\begin{preview}'))
 
-            # Get line_i wave and continua
-            lineWave, lineFlux = wave[idcsLines[:, i]], flux[idcsLines[:, i]]
-            continuaWave, continuaFlux = wave[idcsContinua[:, i]], flux[idcsContinua[:, i]]
-            continuaRedWave, continuaRedFlux = wave[idcsRedContinuum[:, i]], flux[idcsRedContinuum[:, i]]
-            continuaBlueWave, continuaBlueFlux = wave[idcsBlueContinuum[:, i]], flux[idcsBlueContinuum[:, i]]
-            lineRes = lineWave[1] - lineWave[0]  # TODO need to understand this better
+                # Initiate the table
+            with self.pdfDoc.create(Tabu(table_format)) as self.table:
+                if column_headers != None:
+                    self.table.add_hline()
+                    self.table.add_row(map(str, column_headers), escape=False)
+                    self.table.add_hline()
 
-            # Compute linear line continuum and get the standard deviation on the continuum
-            slope, intercept, r_value, p_value, std_err = stats.linregress(continuaWave, continuaFlux)
-            linearLineContinua = lineWave * slope + intercept
+                    # Table .tex without preamble
+        else:
+            self.table = LongTable(table_format)
+            if column_headers != None:
+                self.table.add_hline()
+                self.table.add_row(map(str, column_headers), escape=False)
+                self.table.add_hline()
 
-            # lineFlux_i = linesDf.loc[lineLabel, 'line_Flux'].nominal_value
-            # lineFlux_iSimps = simps(lineFlux, lineWave) - simps(linearLineContinua, lineWave)
-            # lineFlux_iSum = (lineFlux.sum() - linearLineContinua.sum()) * lineRes
+    def addTableRow(self, input_row, row_format='auto', rounddig=4, rounddig_er=None, last_row=False):
 
-            # Excluding Hbeta
-            recombCheck = True if (('H1' in lineLabel) or ('He1' in lineLabel) or ('He2' in lineLabel)) and (
-                        lineLabel != 'H1_4861A') and ('_w' not in lineLabel) else False
-            blendedCheck = True if (lineType is not 'continuum_mask') and (lineType != 'None') else False
-            # print i, lineLabels[i], recombCheck, blendedCheck #linesDf.iloc[i].obs_flux, simps(lineFlux, lineWave), lineFlux.sum()
+        # Default formatting
+        if row_format == 'auto':
+            mapfunc = partial(self.format_for_table, rounddig=rounddig)
+            output_row = map(mapfunc, input_row)
 
-            # Plot the data
-            self.Axis[i].plot(continuaRedWave, continuaRedFlux, color='tab:orange')
-            self.Axis[i].plot(continuaBlueWave, continuaBlueFlux, color='tab:orange')
-            self.Axis[i].plot(lineWave, lineFlux, color='tab:blue')
+        # Append the row
+        self.table.add_row(output_row, escape=False, strict=False)
 
-            # Add flux for isolated recombination lines
-            if recombCheck and blendedCheck is False:
-                # Assign new values
-                fluxContinuum = 0.0
-                linesDf.loc[lineLabel, 'obs_flux'] = linesDf.iloc[i].obs_flux + fluxContinuum
+        # Case of the final row just add one line
+        if last_row:
+            self.table.add_hline()
 
-                self.Axis[i].plot(lineWave, linearLineContinua, color='tab:green')
+    def format_for_table(self, entry, rounddig=4, rounddig_er=2, scientific_notation=False, nan_format='-'):
 
-            # Add flux for blended recombination lines
-            if recombCheck and blendedCheck:
-                muLine, sigmaLine = linesDf.iloc[i].mu, linesDf.iloc[i].sigma
-                lineHalfWidth = 3 * sigmaLine
-                w3, w4 = muLine - lineHalfWidth, muLine + lineHalfWidth
-                idx3, idx4 = np.searchsorted(wave, [w3, w4])
-                idcsLines_trim = (wave[idx3] <= wave) & (wave <= wave[idx4])
-                lineWaveTrim, linearLineContinuaTrim = wave[idcsLines_trim], wave[idcsLines_trim] * slope + intercept
-                fluxContinuum = 0.0
+        if rounddig_er == None: #TODO declare a universal tool
+            rounddig_er = rounddig
 
-                # Assign new values
-                linesDf.loc[lineLabel, 'obs_flux'] = linesDf.iloc[i].obs_flux + fluxContinuum
-                linesDf.loc[lineLabel, 'w3'], linesDf.loc[lineLabel, 'w4'] = w3, w4
+        # Check None entry
+        if entry != None:
 
-                # Generate the plot
-                self.Axis[i].plot(lineWaveTrim, linearLineContinuaTrim, color='tab:purple')
+            # Check string entry
+            if isinstance(entry, (str, bytes)):
+                formatted_entry = entry
 
-            # Adjust the flux in N2_6548
-            if lineLabel == 'N2_6548A':
-                if linesDf.loc[lineLabel, 'region_label'] != 'None':
-                    linesDf.loc[lineLabel, 'obs_fluxErr'] = linesDf.loc['N2_6584A', 'obs_fluxErr']
-                    if (linesDf.loc['N2_6548A', 'obs_fluxErr'] / linesDf.loc['N2_6548A', 'obs_flux']) > 0.1:
-                        linesDf.loc['N2_6548A', 'obs_fluxErr'] = linesDf.loc['N2_6548A', 'obs_flux'] * 0.1
-                    if (linesDf.loc['N2_6584A', 'obs_fluxErr'] / linesDf.loc['N2_6584A', 'obs_flux']) > 0.1:
-                        linesDf.loc['N2_6584A', 'obs_fluxErr'] = linesDf.loc['N2_6584A', 'obs_flux'] * 0.1
+            # Case of Numerical entry
+            else:
 
-            # Adjust the flux in N2_6548
-            if lineLabel == 'O2_7319A':
-                if linesDf.loc[lineLabel, 'region_label'] != 'None':
-                    if (linesDf.loc['O2_7319A', 'obs_fluxErr'] / linesDf.loc['O2_7319A', 'obs_flux']) > 0.1:
-                        linesDf.loc['O2_7319A', 'obs_fluxErr'] = linesDf.loc['O2_7319A', 'obs_flux'] * 0.1
-                    if (linesDf.loc['O2_7330A', 'obs_fluxErr'] / linesDf.loc['O2_7330A', 'obs_flux']) > 0.1:
-                        linesDf.loc['O2_7330A', 'obs_fluxErr'] = linesDf.loc['O2_7330A', 'obs_flux'] * 0.1
+                # Case of an array
+                scalarVariable = True
+                if isinstance(entry, (Sequence, np.ndarray)):
 
-            # Format the plot
-            self.Axis[i].get_yaxis().set_visible(False)
-            self.Axis[i].set_yticks([])
-            self.Axis[i].get_xaxis().set_visible(False)
-            self.Axis[i].set_xticks([])
-            self.Axis[i].set_yscale('log')
+                    # Confirm is not a single value array
+                    if len(entry) == 1:
+                        entry = entry[0]
+                    # Case of an array
+                    else:
+                        scalarVariable = False
+                        formatted_entry = '_'.join(entry)  # we just put all together in a "_' joined string
 
-            # Wording plot
-            self.Axis[i].set_title(lineLabels[i])
+                # Case single scalar
+                if scalarVariable:
 
-        # Plot the data
-        plt.savefig(plotAddress, dpi=200, bbox_inches='tight')
+                    # Case with error quantified # TODO add uncertainty protocol for table
+                    # if isinstance(entry, UFloat):
+                    #     formatted_entry = round_sig(nominal_values(entry), rounddig,
+                    #                                 scien_notation=scientific_notation) + r'$\pm$' + round_sig(
+                    #         std_devs(entry), rounddig_er, scien_notation=scientific_notation)
+
+                    # Case single float
+                    if np.isnan(entry):
+                        formatted_entry = nan_format
+
+                    # Case single float
+                    else:
+                        formatted_entry = numberStringFormat(entry, rounddig)
+        else:
+            # None entry is converted to None
+            formatted_entry = 'None'
+
+        return formatted_entry
+
+    def fig_to_pdf(self, label=None, fig_loc='htbp', width=r'1\textwidth', add_page=False, *args, **kwargs):
+
+        with self.pdfDoc.create(Figure(position=fig_loc)) as plot:
+            plot.add_plot(width=NoEscape(width), placement='h', *args, **kwargs)
+
+            if label is not None:
+                plot.add_caption(label)
+
+        if add_page:
+            self.pdfDoc.append(NewPage())
+
+    def generate_pdf(self, clean_tex=True, output_address=None):
+        if output_address == None:
+            if self.pdf_type == 'table':
+                self.pdfDoc.append(NoEscape(r'\end{preview}'))
+                # self.pdfDoc.generate_pdf(clean_tex = clean_tex) # TODO this one does not work in windows
+            self.pdfDoc.generate_pdf(clean_tex=clean_tex, compiler='pdflatex')
+        else:
+            self.table.generate_tex(output_address)
 
         return
+
+
+class MCOutputDisplay(FigConf, PdfPrinter):
+
+    def __init__(self):
+
+        # Classes with plotting tools
+        FigConf.__init__(self)
+        PdfPrinter.__init__(self)
 
     def emissivitySurfaceFit_2D(self, line_label, emisCoeffs, emisGrid, funcEmis, te_ne_grid, denRange, tempRange):
 
@@ -538,8 +595,8 @@ class Basic_plots(Plot_Conf):
             mean_value = stats_dic[trace_code]['mean']
             std_dev = stats_dic[trace_code]['standard deviation']
             if mean_value > 0.001:
-                label = r'{} = ${}$ $\pm${}'.format(self.labels_latex_dic[trace_code], round_sig(mean_value, 4),
-                                                    round_sig(std_dev, 4))
+                label = r'{} = ${}$ $\pm${}'.format(self.labels_latex_dic[trace_code], np.round(mean_value, 4),
+                                                    np.round(std_dev, 4))
             else:
                 label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(self.labels_latex_dic[trace_code], mean_value, std_dev)
 
@@ -556,11 +613,10 @@ class Basic_plots(Plot_Conf):
 
         return
 
-    def tracesPosteriorPlot(self, params_list, stats_dic):
+    def tracesPosteriorPlot(self, params_list, stats_dic, true_values=None):
 
         # Remove operations from the parameters list # TODO addapt this line to discremenate better
         traces_list = stats_dic.keys()
-        #traces = traces_list[[i for i, v in enumerate(traces_list) if ('_Op' not in v) and ('_log__' not in v) and ('w_i' not in v)]]
         traces = result = [item for item in params_list if item in traces_list]
 
         # Number of traces to plot
@@ -572,9 +628,12 @@ class Basic_plots(Plot_Conf):
         fig = plt.figure(figsize=(8, n_traces))
 
         # # Generate the color map
-        self.gen_colorList(0, n_traces)
+        colorNorm, cmap = self.gen_colorList(0, n_traces)
         gs = gridspec.GridSpec(n_traces * 2, 4)
         gs.update(wspace=0.2, hspace=1.8)
+
+        # self.cmap(self.colorNorm(idx))
+        # cmap(colorNorm(i))
 
         for i in range(n_traces):
 
@@ -591,33 +650,34 @@ class Basic_plots(Plot_Conf):
             std_dev = np.std(stats_dic[trace_code])
 
             if mean_value > 0.001:
-                label = r'{} = ${}$ $\pm${}'.format(self.labels_latex_dic[trace_code], round_sig(mean_value, 4),
-                                                    round_sig(std_dev, 4))
+                label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4),
+                                                    np.round(std_dev, 4))
             else:
-                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(self.labels_latex_dic[trace_code], mean_value, std_dev)
+                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
 
             # Plot the traces
-            axTrace.plot(trace_array, label=label, color=self.get_color(i))
-            axTrace.axhline(y=mean_value, color=self.get_color(i), linestyle='--')
-            axTrace.set_ylabel(self.labels_latex_dic[trace_code])
+            axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
+            axTrace.axhline(y=mean_value, color=cmap(colorNorm(i)), linestyle='--')
+            axTrace.set_ylabel(latex_labels[trace_code])
 
             # Plot the histograms
-            axPoterior.hist(trace_array, bins=50, histtype='step', color=self.get_color(i), align='left')
+            axPoterior.hist(trace_array, bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
 
             # Plot the axis as percentile
             median, percentile16th, percentile84th = np.median(trace_array), np.percentile(trace_array, 16), np.percentile(trace_array, 84)
 
             # Add true value if available
-            if trace_code + '_true' in self.obj_data:
-
-                value_param = self.obj_data[trace_code + '_true']
-                if isinstance(value_param, (list, tuple, np.ndarray)):
-                    nominal_value, std_value = value_param[0], 0.0 if value_param.size == 1 else value_param[1]
-                    axPoterior.axvline(x=nominal_value, color=self.get_color(i), linestyle='solid')
-                    axPoterior.axvspan(nominal_value - std_value, nominal_value + std_value, alpha=0.5, color=self.get_color(i))
-                else:
-                    nominal_value = value_param
-                    axPoterior.axvline(x=nominal_value, color=self.get_color(i), linestyle='solid')
+            if true_values is not None:
+                if trace_code in true_values:
+                    value_param = true_values[trace_code]
+                    print(trace_code, value_param)
+                    if isinstance(value_param, (list, tuple, np.ndarray)):
+                        nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
+                        axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
+                        axPoterior.axvspan(nominal_value - std_value, nominal_value + std_value, alpha=0.5, color=cmap(colorNorm(i)))
+                    else:
+                        nominal_value = value_param
+                        axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
 
             # Add legend
             axTrace.legend(loc=7)
@@ -665,9 +725,9 @@ class Basic_plots(Plot_Conf):
             for HDP in HDP_coords:
 
                 if mean_value > 0.001:
-                    label_limits = 'HPD interval: {} - {}'.format(round_sig(HDP_coords[0], 4),
-                                                                  round_sig(HDP_coords[1], 4))
-                    label_mean = 'Mean value: {}'.format(round_sig(mean_value, 4))
+                    label_limits = 'HPD interval: {} - {}'.format(numberStringFormat(HDP_coords[0], 4),
+                                                                  numberStringFormat(HDP_coords[1], 4))
+                    label_mean = 'Mean value: {}'.format(numberStringFormat(mean_value, 4))
                 else:
                     label_limits = 'HPD interval: {:.3e} - {:.3e}'.format(HDP_coords[0], HDP_coords[1])
                     label_mean = 'Mean value: {:.3e}'.format(mean_value)
@@ -804,7 +864,7 @@ class Basic_plots(Plot_Conf):
             if trace_code == 'Te':
                 labels_list.append(r'$T_{low}$')
             else:
-                labels_list.append(self.labels_latex_dic[trace_code])
+                labels_list.append(latex_labels[trace_code])
         traces_array = np.array(list_arrays).T
 
         # # Reshape true values
@@ -830,32 +890,25 @@ class Basic_plots(Plot_Conf):
 
         return
 
-class Basic_tables(Pdf_printer):
-
-    def __init__(self):
-
-        # Class with pdf tools
-        Pdf_printer.__init__(self)
-
     def table_mean_outputs(self, table_address, db_dict, true_values=None):
 
         # Table headers
-        headers = ['Parameter', 'F2018 value', 'Mean', 'Standard deviation', 'Number of points', 'Median',
+        headers = ['Parameter', 'True value', 'Mean', 'Standard deviation', 'Number of points', 'Median',
                    r'$16^{th}$ percentil', r'$84^{th}$ percentil', r'Difference $\%$']
 
         # Generate pdf
-        #self.create_pdfDoc(table_address, pdf_type='table')
+        self.create_pdfDoc(table_address, pdf_type='table')
         self.pdf_insert_table(headers)
 
         # Loop around the parameters
-        parameters_list = db_dict.keys()
+        parameters_list = list(db_dict.keys())
 
         for param in parameters_list:
 
             if ('_Op' not in param) and param not in ['w_i']:
-
+                print(param)
                 # Label for the plot
-                label       = self.labels_latex_dic[param]
+                label       = latex_labels[param]
                 mean_value  = np.mean(db_dict[param])
                 std         = np.std(db_dict[param])
                 n_traces    = db_dict[param].size
@@ -876,8 +929,8 @@ class Basic_tables(Pdf_printer):
                 self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
                                  last_row=False if parameters_list[-1] != param else True)
 
-        #self.generate_pdf(clean_tex=True)
-        self.generate_pdf(output_address=table_address)
+        self.generate_pdf(clean_tex=True)
+        # self.generate_pdf(output_address=table_address)
 
         return
 
@@ -911,149 +964,100 @@ class Basic_tables(Pdf_printer):
 
         self.generate_pdf(clean_tex=True)
 
-class MCMC_printer(Basic_plots, Basic_tables):
-
-    def __init__(self):
-
-        # Supporting classes
-        Basic_plots.__init__(self)
-        Basic_tables.__init__(self)
-
-    def plot_emisFits(self, linelabels, emisCoeffs_dict, emisGrid_dict, output_folder):
-
-        # Temperature and density meshgrids
-        # X, Y = np.meshgrid(self.tem_grid_range, self.den_grid_range)
-        # XX, YY = X.flatten(), Y.flatten()
-        # te_ne_grid = (XX, YY)
-        te_ne_grid = (self.tempGridFlatten, self.denGridFlatten)
-
-        for i in range(linelabels.size):
-            lineLabel = linelabels[i]
-            print('--Fitting surface', lineLabel)
-
-            # 2D Comparison between PyNeb values and the fitted equation
-            self.emissivitySurfaceFit_2D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_dict[lineLabel],
-                                         self.ionEmisEq[lineLabel], te_ne_grid, self.denRange, self.tempRange)
-
-            output_address = '{}{}_{}_temp{}-{}_den{}-{}'.format(output_folder, 'emissivityTeDe2D', lineLabel,
-                                                                self.tempGridFlatten[0], self.tempGridFlatten[-1],
-                                                                self.denGridFlatten[0], self.denGridFlatten[-1])
-
-            self.savefig(output_address, resolution=200)
-            plt.clf()
-
-            # # 3D Comparison between PyNeb values and the fitted equation
-            # self.emissivitySurfaceFit_3D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_dict[lineLabel],
-            #                              self.ionEmisEq[lineLabel], te_ne_grid)
-            #
-            # output_address = '{}{}_{}_temp{}-{}_den{}-{}'.format(output_folder, 'emissivityTeDe3D', lineLabel,
-            #                                                      self.tempGridFlatten[0], self.tempGridFlatten[-1],
-            #                                                      self.denGridFlatten[0], self.denGridFlatten[-1])
-            # self.savefig(output_address, resolution=200)
-            # plt.clf()
-
-        return
-
-    def plot_emisRatioFits(self, diagnoslabels, emisCoeffs_dict, emisGrid_array, output_folder):
-
-        # Temperature and density meshgrids
-        X, Y = np.meshgrid(self.tem_grid_range, self.den_grid_range)
-        XX, YY = X.flatten(), Y.flatten()
-        te_ne_grid = (XX, YY)
-
-        for i in range(diagnoslabels.size):
-            lineLabel = diagnoslabels[i]
-            print('--Fitting surface', lineLabel)
-
-            # 2D Comparison between PyNeb values and the fitted equation
-            self.emissivitySurfaceFit_2D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_array[:, i],
-                                         self.EmisRatioEq_fit[lineLabel], te_ne_grid)
-
-            output_address = '{}{}_{}'.format(output_folder, 'emissivityTeDe2D', lineLabel)
-            self.savefig(output_address, resolution=200)
-            plt.clf()
-
-            # 3D Comparison between PyNeb values and the fitted equation
-            self.emissivitySurfaceFit_3D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_array[:, i],
-                                         self.EmisRatioEq_fit[lineLabel], te_ne_grid)
-
-            output_address = '{}{}_{}'.format(output_folder, 'emissivityTeDe3D', lineLabel)
-            self.savefig(output_address, resolution=200)
-            plt.clf()
-
-        return
-
-    def plotInputSSPsynthesis(self):
-
-        # Plot input data
-        self.prefit_input()
-        self.savefig(self.input_folder + self.objName + '_prefit_input', resolution=200)
-
-        # Plot resampling
-        self.resampled_observation()
-        self.savefig(self.input_folder + self.objName + '_resampled_spectra', resolution=200)
-
-        # Spectrum masking
-        self.masked_observation()
-        self.savefig(self.input_folder + self.objName + '_spectrum_mask', resolution=200)
-
-        return
-
-    def plotOutputSSPsynthesis(self, pymc2_dbPrefit, pymc2_db_dictPrefit, obj_ssp_fit_flux=None, sspPrefitCoeffs=None):
-
-        # Continua components from ssp prefit
-        if obj_ssp_fit_flux is not None:
-            self.prefit_comparison(obj_ssp_fit_flux)
-            self.savefig(self.input_folder + self.objName + '_prefit_Output', resolution=200)
-
-            # Prefit SSPs norm plot
-            if sspPrefitCoeffs is not None:
-                self.prefit_ssps(sspPrefitCoeffs)
-                self.savefig(self.input_folder + self.objName + '_prefit_NormSsps', resolution=200)
-
-        # SSP prefit traces # TODO increase flexibility for a big number of parameter
-        traces_names = np.array(['Av_star', 'sigma_star'])
-
-        # Stellar prefit Traces
-        self.traces_plot(traces_names, pymc2_db_dictPrefit)
-        self.savefig(self.input_folder + self.objName + '_PrefitTracesPlot', resolution=200)
-
-        # Stellar prefit Posteriors
-        # self.posteriors_plot(traces_names, pymc2_db_dictPrefit)
-        # self.savefig(self.input_folder + self.objName + '_PrefitPosteriorPlot', resolution=200)
-
-        # Stellar prefit Posteriors
-        self.tracesPosteriorPlot(traces_names, pymc2_db_dictPrefit)
-        self.savefig(self.input_folder + self.objName + '_ParamsTracesPosterios_StellarPrefit', resolution=200)
-
-        return
-
-    def plotOuputData(self, database_address, db_dict, model_params, include_no_model_check = False):
-
-        if self.stellarCheck:
-            self.continuumFit(db_dict)
-            self.savefig(database_address + '_ContinuumFit', resolution=200)
-
-        if self.emissionCheck:
-
-            # Table mean values
-            print('-- Model parameters table')
-            self.table_mean_outputs(database_address + '_meanOutput', db_dict, self.obj_data)
-
-            # Line fluxes values
-            print('-- Line fluxes table')
-            self.table_line_fluxes(database_address + '_LineFluxes', self.lineLabels, 'calcFluxes_Op', db_dict, true_data=self.obsLineFluxes)
-            self.fluxes_distribution(self.lineLabels, self.lineIons, 'calcFluxes_Op', db_dict, obsFluxes=self.obsLineFluxes, obsErr=self.fitLineFluxErr)
-            self.savefig(database_address + '_LineFluxesPosteriors', resolution=200)
-
-            # Traces and Posteriors
-            print('-- Model parameters posterior diagram')
-            self.tracesPosteriorPlot(model_params, db_dict)
-            self.savefig(database_address + '_ParamsTracesPosterios', resolution=200)
-
-            # Corner plot
-            print('-- Scatter plot matrix')
-            self.corner_plot(model_params, db_dict, self.obj_data)
-            self.savefig(database_address + '_CornerPlot', resolution=50)
-
-        return
+# class MCMC_printer(Basic_plots, Basic_tables):
+#
+#     def __init__(self):
+#
+#         # Supporting classes
+#         Basic_plots.__init__(self)
+#         Basic_tables.__init__(self)
+#
+#     def plot_emisFits(self, linelabels, emisCoeffs_dict, emisGrid_dict, output_folder):
+#
+#         te_ne_grid = (self.tempGridFlatten, self.denGridFlatten)
+#
+#         for i in range(linelabels.size):
+#             lineLabel = linelabels[i]
+#             print('--Fitting surface', lineLabel)
+#
+#             # 2D Comparison between PyNeb values and the fitted equation
+#             self.emissivitySurfaceFit_2D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_dict[lineLabel],
+#                                          self.ionEmisEq[lineLabel], te_ne_grid, self.denRange, self.tempRange)
+#
+#             output_address = '{}{}_{}_temp{}-{}_den{}-{}'.format(output_folder, 'emissivityTeDe2D', lineLabel,
+#                                                                 self.tempGridFlatten[0], self.tempGridFlatten[-1],
+#                                                                 self.denGridFlatten[0], self.denGridFlatten[-1])
+#
+#             self.savefig(output_address, resolution=200)
+#             plt.clf()
+#
+#             # # 3D Comparison between PyNeb values and the fitted equation
+#             # self.emissivitySurfaceFit_3D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_dict[lineLabel],
+#             #                              self.ionEmisEq[lineLabel], te_ne_grid)
+#             #
+#             # output_address = '{}{}_{}_temp{}-{}_den{}-{}'.format(output_folder, 'emissivityTeDe3D', lineLabel,
+#             #                                                      self.tempGridFlatten[0], self.tempGridFlatten[-1],
+#             #                                                      self.denGridFlatten[0], self.denGridFlatten[-1])
+#             # self.savefig(output_address, resolution=200)
+#             # plt.clf()
+#
+#         return
+#
+#     def plot_emisRatioFits(self, diagnoslabels, emisCoeffs_dict, emisGrid_array, output_folder):
+#
+#         # Temperature and density meshgrids
+#         X, Y = np.meshgrid(self.tem_grid_range, self.den_grid_range)
+#         XX, YY = X.flatten(), Y.flatten()
+#         te_ne_grid = (XX, YY)
+#
+#         for i in range(diagnoslabels.size):
+#             lineLabel = diagnoslabels[i]
+#             print('--Fitting surface', lineLabel)
+#
+#             # 2D Comparison between PyNeb values and the fitted equation
+#             self.emissivitySurfaceFit_2D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_array[:, i],
+#                                          self.EmisRatioEq_fit[lineLabel], te_ne_grid)
+#
+#             output_address = '{}{}_{}'.format(output_folder, 'emissivityTeDe2D', lineLabel)
+#             self.savefig(output_address, resolution=200)
+#             plt.clf()
+#
+#             # 3D Comparison between PyNeb values and the fitted equation
+#             self.emissivitySurfaceFit_3D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_array[:, i],
+#                                          self.EmisRatioEq_fit[lineLabel], te_ne_grid)
+#
+#             output_address = '{}{}_{}'.format(output_folder, 'emissivityTeDe3D', lineLabel)
+#             self.savefig(output_address, resolution=200)
+#             plt.clf()
+#
+#         return
+#
+#     def plotOuputData(self, database_address, db_dict, model_params):
+#
+#         if self.stellarCheck:
+#             self.continuumFit(db_dict)
+#             self.savefig(database_address + '_ContinuumFit', resolution=200)
+#
+#         if self.emissionCheck:
+#
+#             # Table mean values
+#             print('-- Model parameters table')
+#             self.table_mean_outputs(database_address + '_meanOutput', db_dict, self.obj_data)
+#
+#             # Line fluxes values
+#             print('-- Line fluxes table')
+#             self.table_line_fluxes(database_address + '_LineFluxes', self.lineLabels, 'calcFluxes_Op', db_dict, true_data=self.obsLineFluxes)
+#             self.fluxes_distribution(self.lineLabels, self.lineIons, 'calcFluxes_Op', db_dict, obsFluxes=self.obsLineFluxes, obsErr=self.fitLineFluxErr)
+#             self.savefig(database_address + '_LineFluxesPosteriors', resolution=200)
+#
+#             # Traces and Posteriors
+#             print('-- Model parameters posterior diagram')
+#             self.tracesPosteriorPlot(model_params, db_dict)
+#             self.savefig(database_address + '_ParamsTracesPosterios', resolution=200)
+#
+#             # Corner plot
+#             print('-- Scatter plot matrix')
+#             self.corner_plot(model_params, db_dict, self.obj_data)
+#             self.savefig(database_address + '_CornerPlot', resolution=50)
+#
+#         return

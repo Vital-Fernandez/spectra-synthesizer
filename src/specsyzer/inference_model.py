@@ -1,11 +1,16 @@
 import pymc3
+import theano
 import theano.tensor as tt
 import numpy as np
-from data_reading import save_MC_fitting, load_MC_fitting, parseObjData
+from data_reading import save_MC_fitting, parseConfDict
+from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_TSIII_relation
 from physical_model.gasEmission_functions import calcEmFluxes, EmissionTensors, assignFluxEq2Label
 
+
+# Disable compute_test_value in theano zeros tensor
+theano.config.compute_test_value = "ignore"
 
 def displaySimulationData(model):
 
@@ -23,9 +28,11 @@ def displaySimulationData(model):
     return
 
 
-class SpectraSynthesizer:
+class SpectraSynthesizer(MCOutputDisplay):
 
     def __init__(self):
+
+        MCOutputDisplay.__init__(self)
 
         self.modelParameters = None
         self.priorDict = {} # TODO This one must include the different coordinates
@@ -103,7 +110,8 @@ class SpectraSynthesizer:
 
             # Display prior configuration
             if verbose:
-                print(f'-- {param} {priorConf[0]} dist : mu = {priorConf[1]}, std = {priorConf[2]}, normConst = {priorConf[3]}')
+                print(f'-- {param} {self.priorDict[param][0]} dist : mu = {self.priorDict[param][1]}, '
+                      f'std = {self.priorDict[param][2]}, normConst = {self.priorDict[param][3]}')
 
         return
 
@@ -115,7 +123,7 @@ class SpectraSynthesizer:
         # Container to store the synthetic line fluxes
         fluxTensor = tt.zeros(self.lineLabels.size)
 
-        with pymc3.Model() as model:
+        with pymc3.Model() as self.inferenModel:
 
             # Gas priors
             n_e = self.set_prior('n_e')
@@ -137,7 +145,7 @@ class SpectraSynthesizer:
                 lineLabel = self.lineLabels[i]
                 lineIon = self.lineIons[i]
                 lineFlambda = self.lineFlambda[i]
-                fluxEq = self.emtt.emFluxTensors[self.eqLabelArray[i]]
+                fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
                 emisCoef = self.emisCoef[lineLabel]
                 emisEq = self.emisEq[lineLabel]
 
@@ -161,27 +169,29 @@ class SpectraSynthesizer:
             Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.emissionErr, observed=self.emissionFluxes)
 
             # Display simulation data
-            displaySimulationData(model)
+            displaySimulationData(self.inferenModel)
 
-        return model
+        return
 
-    def run_sampler(self, simulation_mame, db_address, iterations, tuning, normContants):
-
-        # Select the model
-        model = self.emission_model()
+    def run_sampler(self, db_location, iterations, tuning, nchains=2, njobs=1, conf_file=None):
 
         # Launch model
         print('\n- Launching sampler')
-        trace = pymc3.sample(iterations, tune=tuning, nchains=2, njobs=1, model=model)
+        trace = pymc3.sample(iterations, tune=tuning, nchains=nchains, njobs=njobs, model=self.inferenModel)
 
         # Save the database
-        save_MC_fitting(db_address, trace, model)
+        save_MC_fitting(db_location, trace, self.inferenModel)
 
         # Save mean and std from parameters into the object log
+        # Load the database
+        # Save the database and store the data
         store_params = {}
         for parameter in trace.varnames:
             if ('_log__' not in parameter) and ('interval' not in parameter):
-                trace_norm = normContants[parameter] if parameter in normContants else 1.0
+                trace_norm = self.priorDict[parameter][3] if parameter in self.priorDict else 1.0
                 trace_i = trace_norm * trace[parameter]
                 store_params[parameter] = [trace_i.mean(), trace_i.std()]
-        parseObjData(self.configFile, self.objName + '_results', store_params)
+
+        # Save results summary to configuration file
+        if conf_file is not None:
+            parseConfDict(conf_file, store_params, section_name='Fitting_results')

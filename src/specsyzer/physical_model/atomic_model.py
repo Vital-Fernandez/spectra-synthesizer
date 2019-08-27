@@ -185,10 +185,10 @@ class IonEmissivity(EmissivitySurfaceFitter):
                     emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempGridFlatten, self.denGridFlatten,
                                                                            wave=float(pynebCode_list[i]), product=False)
                 else:
+                    emis_grid_i = np.zeros(self.tempGridFlatten.size)
                     for component in blended_list[i].split(','):
                         component_wave = float(linesDb.loc[component].pynebCode)
-                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempGridFlatten,
-                                                                                self.denGridFlatten,
+                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempGridFlatten, self.denGridFlatten,
                                                                                 wave=component_wave, product=False)
                 if (grids_folder is not None):
                     np.save(grids_folder, emis_grid_i)

@@ -31,9 +31,9 @@ objParams['true_values'] = {'flux_hbeta': 5e-14,
 objParams.update(ss._default_cfg)
 
 # Declare lines to simulate
-objParams['input_lines'] = ['H1_4341A', 'H1_6563A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He2_4686A', 'O2_7319A_b',
-                            'O3_4363A', 'O3_4959A', 'O3_5007A', 'N2_6548A', 'N2_6584A', 'S2_6716A', 'S2_6731A',
-                            'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A', 'Ar4_4740A']
+objParams['input_lines'] = ['H1_4341A', 'H1_6563A', 'He1_3889A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He1_7065A',
+                            'He2_4686A', 'O2_7319A_b', 'O3_4363A', 'O3_4959A', 'O3_5007A', 'N2_6548A', 'N2_6584A',
+                            'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A', 'Ar4_4740A']
 
 # We use the default lines database to generate the synthetic emission lines log for this simulation
 linesLogPath = os.path.join(ss._literatureDataFolder, ss._default_cfg['lines_data_file'])

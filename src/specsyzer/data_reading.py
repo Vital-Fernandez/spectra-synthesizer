@@ -8,7 +8,8 @@ from scipy.interpolate import interp1d
 from distutils.util import strtobool
 from collections import Sequence
 
-__all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting']
+__all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
+           'parseConfDict', 'parseConfList']
 
 
 CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
@@ -190,7 +191,7 @@ def loadConfData(filepath, objName=None):
     return confDict
 
 
-# Function to save data to configuration file section
+# Function to save data to configuration file based on a previous dictionary
 def safeConfData(fileAddress, parametersDict, conf_style_path=None):
 
     # Declare the default configuration file and load it
@@ -271,6 +272,66 @@ def safeConfData(fileAddress, parametersDict, conf_style_path=None):
 
     # Safe the configuration file
     with open(fileAddress, 'w') as f:
+        output_cfg.write(f)
+
+    return
+
+
+# Function to save a parameter key-value item (or list) into the dictionary
+def parseConfList(output_file, param_key, param_value, section_name):
+
+    # Check if file exists
+    if os.path.isfile(output_file):
+        output_cfg = configparser.ConfigParser()
+        output_cfg.optionxform = str
+        output_cfg.read(output_file)
+    else:
+        # Create new configuration object
+        output_cfg = configparser.ConfigParser()
+        output_cfg.optionxform = str
+
+    # Map key values to the expected format and store them
+    if isinstance(param_key, (Sequence, np.array)):
+        for i in range(len(param_key)):
+            value_formatted = formatConfEntry(param_value[i])
+            output_cfg.set(section_name, param_key[i], value_formatted)
+    else:
+        value_formatted = formatConfEntry(param_value)
+        output_cfg.set(section_name, param_key, value_formatted)
+
+    # Save the text file data
+    with open(output_file, 'w') as f:
+        output_cfg.write(f)
+
+    return
+
+
+# Function to save a parameter dictionary into a cfg dictionary
+def parseConfDict(output_file, param_dict, section_name):
+
+    # TODO add logic to erase section previous results
+
+    # Check if file exists
+    if os.path.isfile(output_file):
+        output_cfg = configparser.ConfigParser()
+        output_cfg.optionxform = str
+        output_cfg.read(output_file)
+    else:
+        # Create new configuration object
+        output_cfg = configparser.ConfigParser()
+        output_cfg.optionxform = str
+
+    # Add new section if it is not there
+    if not output_cfg.has_section(section_name):
+        output_cfg.add_section(section_name)
+
+    # Map key values to the expected format and store them
+    for item in param_dict:
+        value_formatted = formatConfEntry(param_dict[item])
+        output_cfg.set(section_name, item, value_formatted)
+
+    # Save the text file data
+    with open(output_file, 'w') as f:
         output_cfg.write(f)
 
     return
@@ -460,21 +521,29 @@ def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
 
 
 # Function to restore PYMC3 simulations using pickle
-def load_MC_fitting(db_address, sampler='pymc3', normContants = list()):
+def load_MC_fitting(db_address, return_dictionary=True, normConstants=None):
 
-    if sampler is 'pymc3':
+    # Restore the trace
+    with open(db_address, 'rb') as trace_restored:
+        db = pickle.load(trace_restored)
 
-        # Restore the trace
-        with open(db_address, 'rb') as trace_restored:
-            data = pickle.load(trace_restored)
-        basic_model, trace = data['model'], data['trace']
+    # Return Pymc3 db object
+    if return_dictionary is False:
+        return db
 
-        # Save the parameters you want in a dictionary of dicts
-        stats_dict = {}
+    # Return dictionary with the traces
+    else:
+        model_reference, trace = db['model'], db['trace']
+
+        traces_dict = {}
         for parameter in trace.varnames:
             if ('_log__' not in parameter) and ('interval' not in parameter):
-                trace_norm = normContants[parameter] if parameter in normContants else 1.0
+                prior_key = parameter + '_prior'
+                trace_norm = normConstants[prior_key][3] if prior_key in normConstants else 1.0
                 trace_i = trace_norm * trace[parameter]
-                stats_dict[parameter] = trace_i
+                traces_dict[parameter] = trace_i
 
-        return stats_dict
+        return traces_dict
+
+
+
