@@ -173,11 +173,11 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
-    def run_sampler(self, db_location, iterations, tuning, nchains=2, njobs=1, conf_file=None):
+    def run_sampler(self, db_location, iterations, tuning, nchains=2, njobs=2, conf_file=None):
 
         # Launch model
         print('\n- Launching sampler')
-        trace = pymc3.sample(iterations, tune=tuning, nchains=nchains, njobs=njobs, model=self.inferenModel)
+        trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel)
 
         # Save the database
         save_MC_fitting(db_location, trace, self.inferenModel)
