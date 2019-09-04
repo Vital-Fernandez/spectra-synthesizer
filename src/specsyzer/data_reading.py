@@ -165,7 +165,7 @@ def loadConfData(filepath, objName=None):
 
             elif '_prior' in key:
                 value = value.split(',')
-                confDict[key] = [float(value[i]) if i > 0 else value[i] for i in range(len(value))]
+                confDict[key] = np.array([float(value[i]) if i > 0 else value[i] for i in range(len(value))], dtype=object) # TODO this one should read as an array
 
             # List of strings
             elif '_list' in key:

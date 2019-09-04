@@ -53,15 +53,6 @@ class DirectMethod:
         for ion in self.obsAtoms:
             self.ionicAbundCheck[ion] = self.checkIonObservance(ion, self.obsAtoms)
 
-        # # Attributes to increase calculation speed
-        # self.rangeLines = np.arange(lineIons.size)
-        # self.rangeObsAtoms = np.arange(self.obsAtoms.size)
-        #
-        # # Lines data
-        # self.lineLabels = lineLabels
-        # self.lineIons = lineIons
-        # self.lineFlambda = lineFlambda
-
         return
 
     def checkIonObservance(self, ion, ionList):

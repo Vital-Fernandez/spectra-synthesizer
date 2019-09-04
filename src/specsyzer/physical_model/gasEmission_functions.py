@@ -52,6 +52,36 @@ def calcEmFluxes(Tlow, Thigh, ne, cHbeta, tau, abund_dict,
 
     return fluxEq_i
 
+def calcEmFluxes_IFU(Tlow, Thigh, ne, cHbeta, tau, abund_dict,
+                 idx, lineLabel, lineIon, lineFlambda,
+                 fluxEq, ftau_coeffs, emisCoeffs, emis_func,
+                 indcsLabelLines, He1r_check, HighTemp_check, idx_region):
+
+    # Appropriate data for the ion
+    Te_calc = Thigh if HighTemp_check[idx] else Tlow
+
+    # Line Emissivity
+    line_emis = emis_func((Te_calc, ne), *emisCoeffs)
+
+    # Atom abundance
+    line_abund = abund_dict[lineIon]
+
+    # ftau correction for HeI lines # TODO This will increase in complexity fast need alternative
+    if He1r_check[idx]:
+        line_ftau = ftau_func(tau, Te_calc, ne, *ftau_coeffs[lineLabel])
+    else:
+        line_ftau = None
+
+    # Line flux with special correction:
+    if indcsLabelLines['O2_7319A_b'][idx]:
+        fluxEq_i = fluxEq(line_emis, cHbeta, lineFlambda, line_abund, abund_dict['O3_' + str(idx_region)], Thigh)
+
+    # Classical line flux
+    else:
+        fluxEq_i = fluxEq(line_emis, cHbeta, lineFlambda, line_abund, line_ftau, continuum=0.0)
+
+    return fluxEq_i
+
 
 def storeValueInTensor(idx, value, tensor1D):
     return tt.inc_subtensor(tensor1D[idx], value)
