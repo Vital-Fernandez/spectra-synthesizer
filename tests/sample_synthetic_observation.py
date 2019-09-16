@@ -35,7 +35,7 @@ obj1_model = ss.SpectraSynthesizer()
 obj1_model.declare_model_data(objLinesDF, objIons, objRed, objChem)
 
 # Set parameters priors
-obj1_model.priors_configuration(objParams['parameter_list'], prior_conf_dict=objParams)
+obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams)
 
 # Declare simulation inference model
 obj1_model.inference_model_emission()

@@ -112,7 +112,7 @@ for n_obj in range(n_objs):
     objLinesDF.insert(loc=2, column='obsFluxErr', value=lineFluxes * objParams['lines_minimum_error'])
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
-    synthLinesLogPath = f'{user_folder}IFU_region{n_obj}_linesLog.txt'
+    synthLinesLogPath = f'{user_folder}{n_objs}IFU_region{n_obj}_linesLog.txt'
     print('saving in', synthLinesLogPath)
     with open(synthLinesLogPath, 'w') as f:
         f.write(objLinesDF.to_string(index=True, index_names=False))
@@ -125,5 +125,5 @@ for n_obj in range(n_objs):
     # Include opacite parametrisation file
     objParams['ftau_file'] = os.path.join(ss._literatureDataFolder, objParams['ftau_file'])
 
-    synthConfigPath = f'{user_folder}IFU_region{n_obj}_config.txt'
+    synthConfigPath = f'{user_folder}{n_objs}IFU_region{n_obj}_config.txt'
     ss.safeConfData(synthConfigPath, objParams)

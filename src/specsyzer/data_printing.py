@@ -613,11 +613,26 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def tracesPosteriorPlot(self, params_list, stats_dic, true_values=None):
+    def tracesPosteriorPlot(self, params_list, stats_dic, idx_region=0, true_values=None):
 
         # Remove operations from the parameters list # TODO addapt this line to discremenate better
         traces_list = stats_dic.keys()
-        traces = result = [item for item in params_list if item in traces_list]
+        region_ext = f'_{idx_region}'
+        #traces = [item for item in params_list if item in traces_list]
+        #traces = [item for item in params_list if (item in traces_list) or (item + region_ext in traces_list)]
+
+        traces, traceTrueValuse = [], {}
+        for param_name in params_list:
+
+            paramExt_name = param_name + region_ext
+            if param_name in stats_dic:
+                ref_name = param_name
+            elif paramExt_name in stats_dic:
+                ref_name = paramExt_name
+            traces.append(ref_name)
+
+            if param_name in true_values:
+                traceTrueValuse[ref_name] = true_values[param_name]
 
         # Number of traces to plot
         n_traces = len(traces)
@@ -632,9 +647,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         gs = gridspec.GridSpec(n_traces * 2, 4)
         gs.update(wspace=0.2, hspace=1.8)
 
-        # self.cmap(self.colorNorm(idx))
-        # cmap(colorNorm(i))
-
+        # Loop through the parameters and print the traces
         for i in range(n_traces):
 
             # Creat figure axis
@@ -644,21 +657,22 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             # Current trace
             trace_code = traces[i]
             trace_array = stats_dic[trace_code]
+            print(i, trace_code)
 
             # Label for the plot
             mean_value = np.mean(stats_dic[trace_code])
             std_dev = np.std(stats_dic[trace_code])
+            traceLatexRef = trace_code.replace(region_ext, '')
 
             if mean_value > 0.001:
-                label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4),
-                                                    np.round(std_dev, 4))
+                label = r'{} = ${}$ $\pm${}'.format(latex_labels[traceLatexRef], np.round(mean_value, 4), np.round(std_dev, 4))
             else:
-                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
+                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[traceLatexRef], mean_value, std_dev)
 
             # Plot the traces
             axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
             axTrace.axhline(y=mean_value, color=cmap(colorNorm(i)), linestyle='--')
-            axTrace.set_ylabel(latex_labels[trace_code])
+            axTrace.set_ylabel(latex_labels[traceLatexRef])
 
             # Plot the histograms
             axPoterior.hist(trace_array, bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
@@ -668,8 +682,8 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
             # Add true value if available
             if true_values is not None:
-                if trace_code in true_values:
-                    value_param = true_values[trace_code]
+                if trace_code in traceTrueValuse:
+                    value_param = traceTrueValuse[trace_code]
                     print(trace_code, value_param)
                     if isinstance(value_param, (list, tuple, np.ndarray)):
                         nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
