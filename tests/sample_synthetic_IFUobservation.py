@@ -2,7 +2,7 @@ import os
 import src.specsyzer as ss
 
 # Search for the data in the default user folder
-n_objs = 1
+n_objs = 10
 user_folder = os.path.join(os.path.expanduser('~'), '')
 output_db = f'{user_folder}/{n_objs}IFU_fitting_db'
 
@@ -47,7 +47,7 @@ obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict
 obj1_model.inference_IFUmodel_emission()
 
 # Run the simulation
-obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
+obj1_model.run_sampler(output_db, 5000, 2000)
 simulation_outputfile = f'{user_folder}{n_objs}IFU_results.txt'
 obj1_model.load_sampler_results(output_db, simulation_outputfile, n_regions=n_objs)
 

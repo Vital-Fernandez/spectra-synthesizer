@@ -1,35 +1,34 @@
 import os
 import numpy as np
 import src.specsyzer as ss
-
+import src.specsyzer as ss
 # Use the default user folder to store the results
 user_folder = os.path.join(os.path.expanduser('~'), '')
 
 # Loop through the number of input objects
-n_objs = 3
+n_objs = 10
 for n_obj in range(n_objs):
 
     # Dictionary storing synthetic data
     objParams = {}
 
     # Declare artificial data for the emission line region
-    # Each region has its parameter value increased by a 5%
     objParams['true_values'] = {'flux_hbeta': 5e-14 * (1.0 + 0.05 * n_obj),
-                                'n_e': 125.0 * (1.0 + 0.05 * n_obj),
+                                'n_e': 100.0 + 50.0 * n_obj,
                                 'T_low': 10000.0 * (1.0 + 0.05 * n_obj),
                                 'T_high': ss.TOIII_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
-                                'tau': 0.875 * (1.0 + 0.05 * n_obj),
-                                'cHbeta': 0.125 * (1.0 + 0.05 * n_obj),
+                                'tau': 0.60 + 0.15 * n_obj,
+                                'cHbeta': 0.08 + 0.02 * n_obj,
                                 'H1r': 0.0,
-                                'He1r': 0.0869 * (1.0 + 0.05 * n_obj),
-                                'He2r': 0.00088 * (1.0 + 0.05 * n_obj),
-                                'O2': 7.80 * (1.0 + 0.05 * n_obj),
-                                'O3': 8.05 * (1.0 + 0.05 * n_obj),
-                                'N2': 5.84 * (1.0 + 0.05 * n_obj),
-                                'S2': 5.48 * (1.0 + 0.05 * n_obj),
-                                'S3': 6.36 * (1.0 + 0.05 * n_obj),
-                                'Ar3': 5.72 * (1.0 + 0.05 * n_obj),
-                                'Ar4': 5.06 * (1.0 + 0.05 * n_obj),
+                                'He1r': 0.070 + 0.005 * n_obj,
+                                'He2r': 0.00088 + 0.0002 * n_obj,
+                                'O2': 7.80 + 0.15 * n_obj,
+                                'O3': 8.05 + 0.15 * n_obj,
+                                'N2': 5.84 + 0.15 * n_obj,
+                                'S2': 5.48 + 0.15 * n_obj,
+                                'S3': 6.36 + 0.15 * n_obj,
+                                'Ar3': 5.72 + 0.15 * n_obj,
+                                'Ar4': 5.06 + 0.15 * n_obj,
                                 'err_lines': 0.02}
 
     # Declare lines to simulate
