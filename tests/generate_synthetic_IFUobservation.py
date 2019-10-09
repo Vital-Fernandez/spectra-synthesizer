@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import src.specsyzer as ss
-import src.specsyzer as ss
+
 # Use the default user folder to store the results
 user_folder = os.path.join(os.path.expanduser('~'), '')
 
