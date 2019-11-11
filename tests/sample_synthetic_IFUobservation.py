@@ -20,7 +20,6 @@ for idx_obj in range(n_objs):
     # Load simulation parameters
     objParams = ss.loadConfData(simulationData_file)
 
-<<<<<<< Updated upstream
     # Load emission lines
     objLinesDF = ss.import_emission_line_data(linesLogAddress, input_lines='all')
 
@@ -72,15 +71,14 @@ obj1_model.run_sampler(output_db, 5000, 2000)
 #     # Declare region physical model
 #     obj1_model.define_region(objLinesDF, objIons, objRed, objChem, n_region=idx_obj)
 #
-# # Declare sampling properties
-# obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams, n_regions=n_objs)
-#
-# # Declare simulation inference model
-# obj1_model.inference_IFUmodel_emission()
-#
-# # Run the simulation
-# obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
->>>>>>> Stashed changes
+# Declare sampling properties
+obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams, n_regions=n_objs)
+
+# Declare simulation inference model
+obj1_model.inference_IFUmodel_emission()
+
+# Run the simulation
+obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
 simulation_outputfile = f'{user_folder}{n_objs}IFU_results.txt'
 obj1_model.load_sampler_results(output_db, simulation_outputfile, n_regions=n_objs)
 
