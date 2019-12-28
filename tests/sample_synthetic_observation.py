@@ -57,3 +57,4 @@ true_values = {k.replace('_true', ''): v for k, v in objParams.items() if '_true
 print('-- Model parameters posterior diagram')
 obj1_model.tracesPosteriorPlot(objParams['parameter_list'], traces_dict, true_values)
 obj1_model.savefig(user_folder+'obj1_ParamsTracesPosterios', resolution=200)
+
