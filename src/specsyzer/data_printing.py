@@ -10,15 +10,16 @@ from numpy import reshape, percentile, median
 from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Section, Tabu, Table, LongTable
 from functools import partial
 from collections import Sequence
+from scipy import stats as st
 
 latex_labels = {'y_plus': r'$y^{+}$',
              'He1_abund': r'$y^{+}$',
              'He2_abund': r'$y^{++}$',
              'Te': r'$T_{e}$',
-             'T_low': r'$T_{low}$',
-             'T_high': r'$T_{high}$',
+             'T_low': r'$T_{low}(K)$',
+             'T_high': r'$T_{high}(K)$',
              'T_He': r'$T_{He}$',
-             'n_e': r'$n_{e}$',
+             'n_e': r'$n_{e}(cm^{-3})$',
              'cHbeta': r'$c(H\beta)$',
              'tau': r'$\tau$',
              'xi': r'$\xi$',
@@ -39,13 +40,13 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'N2_abund': r'$N^{+}$',
              'Ar3_abund': r'$Ar^{2+}$',
              'Ar4_abund': r'$Ar^{3+}$',
-             'S2': r'$S^{+}$',
-             'S3': r'$S^{2+}$',
-             'O2': r'$O^{+}$',
-             'O3': r'$O^{2+}$',
-             'N2': r'$N^{+}$',
-             'Ar3': r'$Ar^{2+}$',
-             'Ar4': r'$Ar^{3+}$',
+             'S2': r'$\frac{S^{+}}{H^{+}}$',
+             'S3': r'$\frac{S^{2+}}{H^{+}}$',
+             'O2': r'$\frac{O^{+}}{H^{+}}$',
+             'O3': r'$\frac{O^{2+}}{H^{+}}$',
+             'N2': r'$\frac{N^{+}}{H^{+}}$',
+             'Ar3': r'$\frac{Ar^{2+}}{H^{+}}$',
+             'Ar4': r'$\frac{Ar^{3+}}{H^{+}}$',
              'Ar_abund': r'$\frac{ArI}{HI}$',
              'He_abund': r'$\frac{HeI}{HI}$',
              'O_abund': r'$\frac{OI}{HI}$',
@@ -263,7 +264,7 @@ class FigConf:
 
     def savefig(self, output_address, extension='.png', reset_fig=True, pad_inches=0.2, resolution=300.0):
 
-        plt.savefig(output_address + extension, dpi=resolution, bbox_inches='tight')
+        plt.savefig(output_address + extension, dpi=resolution, bbox_inches='tight', facecolor=np.array((43, 43, 43)) / 255.0)
 
         return
 
@@ -613,17 +614,52 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def tracesPosteriorPlot(self, params_list, stats_dic, true_values=None):
+    def tracesPosteriorPlot(self, params_list, stats_dic, idx_region=0, true_values=None):
 
         # Remove operations from the parameters list # TODO addapt this line to discremenate better
         traces_list = stats_dic.keys()
-        traces = result = [item for item in params_list if item in traces_list]
+        region_ext = f'_{idx_region}'
+        #traces = [item for item in params_list if item in traces_list]
+        #traces = [item for item in params_list if (item in traces_list) or (item + region_ext in traces_list)]
+
+        traces, traceTrueValuse = [], {}
+        for param_name in params_list:
+
+            paramExt_name = param_name + region_ext
+            if param_name in stats_dic:
+                ref_name = param_name
+            elif paramExt_name in stats_dic:
+                ref_name = paramExt_name
+            traces.append(ref_name)
+
+            if param_name in true_values:
+                traceTrueValuse[ref_name] = true_values[param_name]
 
         # Number of traces to plot
         n_traces = len(traces)
 
         # Declare figure format
-        size_dict = {'axes.titlesize': 20, 'axes.labelsize': 20, 'legend.fontsize': 10, 'xtick.labelsize':8, 'ytick.labelsize':8}
+        background = np.array((43, 43, 43)) / 255.0
+        foreground = np.array((179, 199, 216)) / 255.0
+
+        figConf = {'text.color': foreground,
+                   'figure.figsize': (16, 10),
+                   'figure.facecolor': background,
+                   'axes.facecolor': background,
+                   'axes.edgecolor': foreground,
+                   'axes.labelcolor': foreground,
+                   'axes.labelsize': 18,
+                   'xtick.labelsize': 16,
+                   'ytick.labelsize': 16,
+                   'xtick.color': foreground,
+                   'ytick.color': foreground,
+                   'legend.edgecolor': 'inherit',
+                   'legend.facecolor': 'inherit',
+                   'legend.fontsize': 16,
+                   'legend.loc': "center right"}
+        rcParams.update(figConf)
+
+        size_dict = {'axes.titlesize': 14, 'axes.labelsize': 14, 'legend.fontsize': 10, 'xtick.labelsize':8, 'ytick.labelsize':8}
         rcParams.update(size_dict)
         fig = plt.figure(figsize=(8, n_traces))
 
@@ -632,9 +668,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         gs = gridspec.GridSpec(n_traces * 2, 4)
         gs.update(wspace=0.2, hspace=1.8)
 
-        # self.cmap(self.colorNorm(idx))
-        # cmap(colorNorm(i))
-
+        # Loop through the parameters and print the traces
         for i in range(n_traces):
 
             # Creat figure axis
@@ -644,21 +678,22 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             # Current trace
             trace_code = traces[i]
             trace_array = stats_dic[trace_code]
+            print(i, trace_code)
 
             # Label for the plot
             mean_value = np.mean(stats_dic[trace_code])
             std_dev = np.std(stats_dic[trace_code])
+            traceLatexRef = trace_code.replace(region_ext, '')
 
             if mean_value > 0.001:
-                label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4),
-                                                    np.round(std_dev, 4))
+                label = r'{} = ${}$ $\pm${}'.format(latex_labels[traceLatexRef], np.round(mean_value, 4), np.round(std_dev, 4))
             else:
-                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
+                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[traceLatexRef], mean_value, std_dev)
 
             # Plot the traces
             axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
             axTrace.axhline(y=mean_value, color=cmap(colorNorm(i)), linestyle='--')
-            axTrace.set_ylabel(latex_labels[trace_code])
+            axTrace.set_ylabel(latex_labels[traceLatexRef])
 
             # Plot the histograms
             axPoterior.hist(trace_array, bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
@@ -668,8 +703,8 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
             # Add true value if available
             if true_values is not None:
-                if trace_code in true_values:
-                    value_param = true_values[trace_code]
+                if trace_code in traceTrueValuse:
+                    value_param = traceTrueValuse[trace_code]
                     print(trace_code, value_param)
                     if isinstance(value_param, (list, tuple, np.ndarray)):
                         nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
@@ -694,6 +729,140 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axPoterior.set_xticklabels(['',numberStringFormat(median),''])
             axTrace.set_yticks((percentile16th, median, percentile84th))
             axTrace.set_yticklabels((numberStringFormat(percentile16th), '', numberStringFormat(percentile84th)))
+
+        return
+
+    def tracesPriorPostComp(self, params_list, stats_dic, idx_region=0, true_values=None):
+
+        # Remove operations from the parameters list # TODO addapt this line to discremenate better
+        traces_list = stats_dic.keys()
+        region_ext = f'_{idx_region}'
+        #traces = [item for item in params_list if item in traces_list]
+        #traces = [item for item in params_list if (item in traces_list) or (item + region_ext in traces_list)]
+
+        traces, traceTrueValuse = [], {}
+        for param_name in params_list:
+
+            paramExt_name = param_name + region_ext
+            if param_name in stats_dic:
+                ref_name = param_name
+            elif paramExt_name in stats_dic:
+                ref_name = paramExt_name
+            traces.append(ref_name)
+
+            if param_name in true_values:
+                traceTrueValuse[ref_name] = true_values[param_name]
+
+        # Number of traces to plot
+        n_traces = len(traces)
+
+        # Declare figure format
+        background = np.array((43, 43, 43)) / 255.0
+        foreground = np.array((179, 199, 216)) / 255.0
+
+        figConf = {'text.color': foreground,
+                   'figure.figsize': (10, 10),
+                   'figure.facecolor': background,
+                   'axes.facecolor': background,
+                   'axes.edgecolor': foreground,
+                   'axes.labelcolor': foreground,
+                   'axes.labelsize': 18,
+                   'xtick.labelsize': 16,
+                   'ytick.labelsize': 16,
+                   'xtick.color': foreground,
+                   'ytick.color': foreground,
+                   'legend.edgecolor': 'inherit',
+                   'legend.facecolor': 'inherit',
+                   'legend.fontsize': 16,
+                   'legend.loc': "center right"}
+        rcParams.update(figConf)
+
+        fig = plt.figure()
+        ax = fig.add_subplot()
+
+        # Generate the color map
+        colorNorm, cmap = self.gen_colorList(0, n_traces)
+        gs = gridspec.GridSpec(n_traces * 2, 4)
+        gs.update(wspace=0.2, hspace=1.8)
+
+        i = 2
+        trace_code = traces[i]
+        trace_array = stats_dic[trace_code]
+        traceLatexRef = trace_code.replace(region_ext, '')
+        print(i, trace_code, latex_labels[traceLatexRef])
+
+        priorTrace = np.random.normal(15000.0, 5000.0, size=trace_array.size)
+        ax.hist(trace_array, label= '$T_{high}$ posterior', bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
+        ax.hist(priorTrace, label='$T_{high}$ prior', bins=50, histtype='step', color=foreground, align='left')
+        ax.legend()
+        ax.set_xlabel('Temperature (K)')
+        ax.set_ylabel('Counts')
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        # plt.show()
+
+
+        # # Loop through the parameters and print the traces
+        # for i in range(n_traces):
+        #
+        #     # Creat figure axis
+        #     axTrace = fig.add_subplot(gs[2 * i:2 * (1 + i), :3])
+        #     axPoterior = fig.add_subplot(gs[2 * i:2 * (1 + i), 3])
+        #
+        #     # Current trace
+        #     trace_code = traces[i]
+        #     trace_array = stats_dic[trace_code]
+        #     print(i, trace_code)
+        #
+        #     # Label for the plot
+        #     mean_value = np.mean(stats_dic[trace_code])
+        #     std_dev = np.std(stats_dic[trace_code])
+        #     traceLatexRef = trace_code.replace(region_ext, '')
+        #
+        #     if mean_value > 0.001:
+        #         label = r'{} = ${}$ $\pm${}'.format(latex_labels[traceLatexRef], np.round(mean_value, 4), np.round(std_dev, 4))
+        #     else:
+        #         label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[traceLatexRef], mean_value, std_dev)
+        #
+        #     # Plot the traces
+        #     axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
+        #     axTrace.axhline(y=mean_value, color=cmap(colorNorm(i)), linestyle='--')
+        #     axTrace.set_ylabel(latex_labels[traceLatexRef])
+        #
+        #     # Plot the histograms
+        #     axPoterior.hist(trace_array, bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
+        #
+        #     # Plot the axis as percentile
+        #     median, percentile16th, percentile84th = np.median(trace_array), np.percentile(trace_array, 16), np.percentile(trace_array, 84)
+        #
+        #     # Add true value if available
+        #     if true_values is not None:
+        #         if trace_code in traceTrueValuse:
+        #             value_param = traceTrueValuse[trace_code]
+        #             print(trace_code, value_param)
+        #             if isinstance(value_param, (list, tuple, np.ndarray)):
+        #                 nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
+        #                 axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
+        #                 axPoterior.axvspan(nominal_value - std_value, nominal_value + std_value, alpha=0.5, color=cmap(colorNorm(i)))
+        #             else:
+        #                 nominal_value = value_param
+        #                 axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
+        #
+        #     # Add legend
+        #     axTrace.legend(loc=7)
+        #
+        #     # Remove ticks and labels
+        #     if i < n_traces - 1:
+        #         axTrace.get_xaxis().set_visible(False)
+        #         axTrace.set_xticks([])
+        #
+        #     axPoterior.yaxis.set_major_formatter(plt.NullFormatter())
+        #     axPoterior.set_yticks([])
+        #
+        #     axPoterior.set_xticks([percentile16th, median, percentile84th])
+        #     axPoterior.set_xticklabels(['',numberStringFormat(median),''])
+        #     axTrace.set_yticks((percentile16th, median, percentile84th))
+        #     axTrace.set_yticklabels((numberStringFormat(percentile16th), '', numberStringFormat(percentile84th)))
 
         return
 
@@ -836,57 +1005,72 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def corner_plot(self, params_list, stats_dic, true_values=None):
+    def corner_plot(self, params_list, stats_dic, idx_region=0, true_values=None):
 
-        # Remove operations from the parameters list
+        # Remove operations from the parameters list # TODO addapt this line to discremenate better
         traces_list = stats_dic.keys()
-        traces = [item for item in params_list if item in traces_list]
+        region_ext = f'_{idx_region}'
+
+        traces, traceTrueValuse = [], {}
+        for param_name in params_list:
+
+            paramExt_name = param_name + region_ext
+            if param_name in stats_dic:
+                ref_name = param_name
+            elif paramExt_name in stats_dic:
+                ref_name = paramExt_name
+            traces.append(ref_name)
+
+            if param_name in true_values:
+                traceTrueValuse[ref_name] = true_values[param_name]
 
         # Number of traces to plot
         n_traces = len(traces)
 
-        # Set figure conf
-        sizing_dict = {}
-        sizing_dict['figure.figsize'] = (14, 14)
-        sizing_dict['legend.fontsize'] = 30
-        sizing_dict['axes.labelsize'] = 30
-        sizing_dict['axes.titlesize'] = 15
-        sizing_dict['xtick.labelsize'] = 12
-        sizing_dict['ytick.labelsize'] = 12
-
-        rcParams.update(sizing_dict)
+        # Declare figure format
+        background = np.array((43, 43, 43)) / 255.0
+        foreground = np.array((179, 199, 216)) / 255.0
 
         # Reshape plot data
         list_arrays, labels_list = [], []
         for trace_code in traces:
             trace_array = stats_dic[trace_code]
             list_arrays.append(trace_array)
-            if trace_code == 'Te':
-                labels_list.append(r'$T_{low}$')
-            else:
-                labels_list.append(latex_labels[trace_code])
+            traceLatexRef = trace_code.replace(region_ext, '')
+            labels_list.append(latex_labels[traceLatexRef])
         traces_array = np.array(list_arrays).T
 
-        # # Reshape true values
-        # true_values_list = [None] * len(traces)
-        # for i in range(len(traces)):
-        #     reference = traces[i] + '_true'
-        #     if reference in true_values:
-        #         value_param = true_values[reference]
-        #         if isinstance(value_param, (list, tuple, np.ndarray)):
-        #             true_values_list[i] = value_param[0]
-        #         else:
-        #             true_values_list[i] = value_param
-        #
+        figConf = {'text.color': foreground,
+                   'figure.figsize': (16, 10),
+                   'figure.facecolor': background,
+                   'axes.facecolor': background,
+                   'axes.edgecolor': foreground,
+                   'axes.labelcolor': foreground,
+                   'axes.labelsize': 30,
+                   'xtick.labelsize': 12,
+                   'ytick.labelsize': 12,
+                   'xtick.color': foreground,
+                   'ytick.color': foreground,
+                   'legend.edgecolor': 'inherit',
+                   'legend.facecolor': 'inherit',
+                   'legend.fontsize': 16,
+                   'legend.loc': "center right"}
+        rcParams.update(figConf)
+
         # # Generate the plot
         # self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
         #                          show_titles=True, title_args={"fontsize": 200}, truths=true_values_list,
         #                          truth_color='#ae3135', title_fmt='0.3f')
 
         # Generate the plot
+        mykwargs = {'no_fill_contours':True, 'fill_contours':True}
         self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
                                  show_titles=True, title_args={"fontsize": 200},
-                                 truth_color='#ae3135', title_fmt='0.3f')
+                                 truth_color='#ae3135', title_fmt='0.3f', color=foreground, **mykwargs)#, hist2d_kwargs = {'cmap':'RdGy',
+                                                                                           #'fill_contours':False,
+                                                                                           #'plot_contours':False,
+                                                                                           #'plot_datapoints':False})
+
 
         return
 

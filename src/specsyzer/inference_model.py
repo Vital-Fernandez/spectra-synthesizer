@@ -3,7 +3,7 @@ import theano
 import theano.tensor as tt
 import numpy as np
 import pickle
-from data_reading import save_MC_fitting, load_MC_fitting, parseConfDict
+from data_reading import parseConfDict
 from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_TSIII_relation
@@ -14,6 +14,7 @@ theano.config.compute_test_value = "ignore"
 
 
 def displaySimulationData(model):
+
     # Check test_values are finite
     print('\n-- Test points:')
     model_var = model.test_point
@@ -51,7 +52,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         self.pymc3Dist = {'Normal': pymc3.Normal, 'Lognormal': pymc3.Lognormal}
 
-    def declare_model_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region, minErr=None, verbose=True):
+    def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region, minErr=None, verbose=True):
 
         ext_region = f'_{n_region}'
         n_lines = objLinesDF.index.size
@@ -75,7 +76,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.total_regions += 1
         self.region_vector = np.append(self.region_vector, np.ones(n_lines, dtype=int) * n_region)
 
-    def declare_IFU_data(self, minErr = None, verbose = True):
+    def set_simulation_variables(self, minErr = None, verbose = True):
 
         param_list = ['lineLabels', 'lineIons', 'emissionFluxes', 'emissionErr', 'lineFlambda', 'lineFlambda',
                       'highTemp_check', 'obsIons']
@@ -133,19 +134,19 @@ class SpectraSynthesizer(MCOutputDisplay):
         for ion in np.unique(self.lineIons):
             self.indcsIonLines[ion] = (self.lineIons == ion)
 
+        # Load flux tensors
+        self.emtt = EmissionTensors()
 
-        for idx in range(len(self.abundObjArray)):
-            print(self.obsIons[idx], self.abundObjArray[idx])
+        # Dictionary with simulation abundances
+        self.abund_dict = {}
+        for i in range(self.total_regions):
+            hydrogen_key = 'H1r_' + str(i)
+            self.abund_dict[hydrogen_key] = 1.0
 
         for idx in range(len(self.lineLabels)):
             print(self.lineLabels[idx], self.lineIons[idx], self.lineLocalIon[idx])
 
-        self.emtt = EmissionTensors()
-
-        # Generate the atoms list
-
-        # Establish minimum error on lines:
-        # TODO Should this operation be at the point we import the fluxes?
+        # Establish minimum error on lines: # TODO Should this operation be at the point we import the fluxes?
         if minErr is not None:
             err_fraction = self.emissionErr / self.emissionFluxes
             idcs_smallErr = err_fraction < minErr
@@ -211,8 +212,12 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
-    def priors_configuration(self, model_parameters, prior_conf_dict, n_regions=1, verbose=True):
+    def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=1, verbose=True):
 
+        # Combine regions data
+        self.set_simulation_variables()
+
+        # Simulation prios configuration # TODO we are not using these ones
         self.modelParameters = model_parameters
 
         if verbose:
@@ -225,7 +230,7 @@ class SpectraSynthesizer(MCOutputDisplay):
             # Display prior configuration
             if verbose:
                 print(f'-- {param} {self.priorDict[param][0]} dist : mu = {self.priorDict[param][1]}, '
-                      f'std = {self.priorDict[param][2]}, normConst = {self.priorDict[param][3]},'
+                      f'std = {self.priorDict[param][2]}, normConst = {self.priorDict[param][3]},' # TODO This will need to increase for parametrisaton
                       f' n_regions = {n_regions}')
 
         return
@@ -306,11 +311,10 @@ class SpectraSynthesizer(MCOutputDisplay):
             T_high = self.set_prior('T_high') if include_Thigh_prior else TOIII_TSIII_relation(T_low)
 
             # Abundance priors
-            abund_dict = {'H1r_0': 1.0, 'H1r_1': 1.0, 'H1r_2': 1.0} # TODO I need a mechanism for this default disctionary
             for idx in range(self.obsIons.size):
                 ion = self.obsIons[idx]
                 if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
-                    abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
+                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
 
             # Specific transition priors
             tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
@@ -319,6 +323,7 @@ class SpectraSynthesizer(MCOutputDisplay):
             for i in self.linesRangeArray:
                 i_region = self.region_vector[i]
                 lineLabel = self.lineLabels[i]
+                lineIonRef = self.lineIons[i]
                 lineIon = self.lineLocalIon[i] # TODO warning this is local
                 lineFlambda = self.lineFlambda[i]
                 fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
@@ -326,7 +331,7 @@ class SpectraSynthesizer(MCOutputDisplay):
                 emisEq = self.emisEq[lineLabel]
 
                 lineFlux_i = calcEmFluxes_IFU(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region], tau[i_region],
-                                          abund_dict,
+                                          self.abund_dict,
                                           i, lineLabel, lineIon, lineFlambda,
                                           fluxEq=fluxEq,
                                           ftau_coeffs=self.ftauCoef,
@@ -356,6 +361,26 @@ class SpectraSynthesizer(MCOutputDisplay):
         # Launch model
         print('\n- Launching sampler')
         trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel)
+
+        #Adapt the database to the prior configuration
+        print('HI')
+        model_param = np.array(trace.varnames)
+        prior_param = self.priorDict.keys()
+
+        for idx in range(model_param.size):
+
+            param = model_param[idx]
+
+            # Clean the extension to get the parametrisation
+            ref_name = param
+            for region in range(self.total_regions):
+                ext_region = f'_{region}'
+                ref_name = ref_name.replace(ext_region, '')
+
+            if ref_name in prior_param:
+                reparam0 = self.priorDict[ref_name][3]
+                print('--',idx, param, ref_name, reparam0, '\n')
+                trace.add_values({param:trace[param] * reparam0}, overwrite=True)
 
         # Save the database
         with open(db_location, 'wb') as trace_pickle:

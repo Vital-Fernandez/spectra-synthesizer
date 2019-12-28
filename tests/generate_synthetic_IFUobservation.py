@@ -6,30 +6,29 @@ import src.specsyzer as ss
 user_folder = os.path.join(os.path.expanduser('~'), '')
 
 # Loop through the number of input objects
-n_objs = 3
+n_objs = 10
 for n_obj in range(n_objs):
 
     # Dictionary storing synthetic data
     objParams = {}
 
     # Declare artificial data for the emission line region
-    # Each region has its parameter value increased by a 5%
     objParams['true_values'] = {'flux_hbeta': 5e-14 * (1.0 + 0.05 * n_obj),
-                                'n_e': 125.0 * (1.0 + 0.05 * n_obj),
+                                'n_e': 100.0 + 50.0 * n_obj,
                                 'T_low': 10000.0 * (1.0 + 0.05 * n_obj),
                                 'T_high': ss.TOIII_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
-                                'tau': 0.875 * (1.0 + 0.05 * n_obj),
-                                'cHbeta': 0.125 * (1.0 + 0.05 * n_obj),
+                                'tau': 0.60 + 0.15 * n_obj,
+                                'cHbeta': 0.08 + 0.02 * n_obj,
                                 'H1r': 0.0,
-                                'He1r': 0.0869 * (1.0 + 0.05 * n_obj),
-                                'He2r': 0.00088 * (1.0 + 0.05 * n_obj),
-                                'O2': 7.80 * (1.0 + 0.05 * n_obj),
-                                'O3': 8.05 * (1.0 + 0.05 * n_obj),
-                                'N2': 5.84 * (1.0 + 0.05 * n_obj),
-                                'S2': 5.48 * (1.0 + 0.05 * n_obj),
-                                'S3': 6.36 * (1.0 + 0.05 * n_obj),
-                                'Ar3': 5.72 * (1.0 + 0.05 * n_obj),
-                                'Ar4': 5.06 * (1.0 + 0.05 * n_obj),
+                                'He1r': 0.070 + 0.005 * n_obj,
+                                'He2r': 0.00088 + 0.0002 * n_obj,
+                                'O2': 7.80 + 0.15 * n_obj,
+                                'O3': 8.05 + 0.15 * n_obj,
+                                'N2': 5.84 + 0.15 * n_obj,
+                                'S2': 5.48 + 0.15 * n_obj,
+                                'S3': 6.36 + 0.15 * n_obj,
+                                'Ar3': 5.72 + 0.15 * n_obj,
+                                'Ar4': 5.06 + 0.15 * n_obj,
                                 'err_lines': 0.02}
 
     # Declare lines to simulate
@@ -112,7 +111,7 @@ for n_obj in range(n_objs):
     objLinesDF.insert(loc=2, column='obsFluxErr', value=lineFluxes * objParams['lines_minimum_error'])
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
-    synthLinesLogPath = f'{user_folder}IFU_region{n_obj}_linesLog.txt'
+    synthLinesLogPath = f'{user_folder}{n_objs}IFU_region{n_obj}_linesLog.txt'
     print('saving in', synthLinesLogPath)
     with open(synthLinesLogPath, 'w') as f:
         f.write(objLinesDF.to_string(index=True, index_names=False))
@@ -125,5 +124,5 @@ for n_obj in range(n_objs):
     # Include opacite parametrisation file
     objParams['ftau_file'] = os.path.join(ss._literatureDataFolder, objParams['ftau_file'])
 
-    synthConfigPath = f'{user_folder}IFU_region{n_obj}_config.txt'
+    synthConfigPath = f'{user_folder}{n_objs}IFU_region{n_obj}_config.txt'
     ss.safeConfData(synthConfigPath, objParams)

@@ -67,13 +67,13 @@ def calcEmFluxes_IFU(Tlow, Thigh, ne, cHbeta, tau, abund_dict,
     line_abund = abund_dict[lineIon]
 
     # ftau correction for HeI lines # TODO This will increase in complexity fast need alternative
-    if He1r_check[idx]:
+    if He1r_check[idx]: # if lineIon == 'He1r_0':
         line_ftau = ftau_func(tau, Te_calc, ne, *ftau_coeffs[lineLabel])
     else:
         line_ftau = None
 
-    # Line flux with special correction:
-    if indcsLabelLines['O2_7319A_b'][idx]:
+    # Lines flux with special correction: # TODO a dictionary might be better as the number of line increases
+    if indcsLabelLines['O2_7319A_b'][idx]: #if lineLabel == 'O2_7319A_b':
         fluxEq_i = fluxEq(line_emis, cHbeta, lineFlambda, line_abund, abund_dict['O3_' + str(idx_region)], Thigh)
 
     # Classical line flux
