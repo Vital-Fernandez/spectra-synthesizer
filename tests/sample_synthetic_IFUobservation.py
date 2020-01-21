@@ -3,7 +3,7 @@ import numpy as np
 import src.specsyzer as ss
 
 # Search for the data in the default user folder
-n_objs = 10
+n_objs = 1
 user_folder = os.path.join(os.path.expanduser('~'), '')
 output_db = f'{user_folder}/{n_objs}IFU_fitting_db'
 
@@ -32,6 +32,10 @@ for idx_obj in range(n_objs):
                                tempGrid=objParams['temp_grid'],
                                denGrid=objParams['den_grid'])
 
+    # Generate interpolator from the emissivity grids
+    ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
+    objIons.computeEmissivityGrid(objLinesDF, ionDict, linesDb=ss._linesDb)
+
     # Load coefficients for emissivity fittings:
     objIons.load_emis_coeffs(objLinesDF.index.values, objParams)
 
@@ -44,12 +48,9 @@ for idx_obj in range(n_objs):
 # Declare sampling properties
 obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams, n_regions=n_objs)
 
-# Declare simulation inference model
-obj1_model.inference_IFUmodel_emission()
-
-# Run the simulation
-obj1_model.run_sampler(output_db, 5000, 2000)
-=======
+# # Run the simulation
+# obj1_model.run_sampler(output_db, 5000, 2000)
+#
 #     # Load emission lines
 #     objLinesDF = ss.import_emission_line_data(linesLogAddress, input_lines='all')
 #
@@ -72,7 +73,7 @@ obj1_model.run_sampler(output_db, 5000, 2000)
 #     obj1_model.define_region(objLinesDF, objIons, objRed, objChem, n_region=idx_obj)
 #
 # Declare sampling properties
-obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams, n_regions=n_objs)
+# obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams, n_regions=n_objs)
 
 # Declare simulation inference model
 obj1_model.inference_IFUmodel_emission()
@@ -92,24 +93,19 @@ true_values = {k.replace('_true', ''): v for k, v in objParams.items() if '_true
 # obj1_model.table_mean_outputs(user_folder+'obj1_meanOutput', traces_dict, objParams)
 
 # Traces and Posteriors
-# print('-- Model parameters posterior diagram')
-# figure_file = f'{user_folder}{n_objs}IFU_ParamsTracesPosterios.txt'
-# obj1_model.tracesPosteriorPlot(objParams['parameter_list'], traces_dict, idx_obj, true_values)
-# obj1_model.savefig(figure_file, resolution=200)
+print('-- Model parameters posterior diagram')
+figure_file = f'{user_folder}{n_objs}IFU_ParamsPosteriors.txt'
+obj1_model.tracesPosteriorPlot(objParams['parameter_list'], traces_dict, idx_obj, true_values)
+obj1_model.savefig(figure_file, resolution=200)
 
 # Traces and Posteriors
-# print('-- Model parameters corner diagram')
-# figure_file = f'{user_folder}{n_objs}IFU_corner'
-# obj1_model.corner_plot(objParams['parameter_list'], traces_dict, idx_obj, true_values)
-# obj1_model.savefig(figure_file, resolution=200)
-
-# print('-- Model parameters corner diagram')
-# figure_file = f'{user_folder}{n_objs}IFU_corner'
-# obj1_model.corner_plot(['T_low', 'T_high', 'n_e', 'O2_0', 'O3_0', 'S2_0', 'S3_0'], traces_dict, idx_obj, true_values)
-# obj1_model.savefig(figure_file, resolution=200)
-
 print('-- Model parameters corner diagram')
-figure_file = f'E:/Dropbox/Astrophysics/Seminars/PyConES_2019/{n_objs}priorPostComp'
+figure_file = f'{user_folder}{n_objs}IFU_corner'
+obj1_model.corner_plot(objParams['parameter_list'], traces_dict, idx_obj, true_values)
+obj1_model.savefig(figure_file, resolution=200)
+
+print('-- Model parameters Traces-Posterior diagram')
+figure_file = f'{user_folder}{n_objs}IFU_paramsTracesPost'
 obj1_model.tracesPriorPostComp(objParams['parameter_list'], traces_dict, idx_obj, true_values)
 obj1_model.savefig(figure_file, resolution=200)
 

@@ -66,6 +66,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.region_data[f'emisCoef_{n_region}'] = ion_model.emisCoeffs
         self.region_data[f'emisEq_{n_region}'] = ion_model.ionEmisEq_fit
         self.region_data[f'ftauCoef_{n_region}'] = ion_model.ftau_coeffs
+        self.region_data[f'emisGridInterp_{n_region}'] = ion_model.emisGridInterp
 
         self.region_data[f'indcsLabelLines_{n_region}'] = chemistry_model.indcsLabelLines
         self.region_data[f'indcsIonLines_{n_region}'] = chemistry_model.indcsIonLines
@@ -81,7 +82,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         param_list = ['lineLabels', 'lineIons', 'emissionFluxes', 'emissionErr', 'lineFlambda', 'lineFlambda',
                       'highTemp_check', 'obsIons']
 
-        dictionary_list = ['emisCoef', 'emisEq', 'ftauCoef']
+        dictionary_list = ['emisCoef', 'emisEq', 'ftauCoef', 'emisEq', 'emisGridInterp']
 
         combine_dict_list = ['indcsLabelLines', 'indcsIonLines']
 
@@ -176,6 +177,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         self.emisCoef = ion_model.emisCoeffs
         self.emisEq = ion_model.ionEmisEq_fit
+        self.emisGridInterp = ion_model.emisGridInterp
 
         self.emtt = EmissionTensors()
         self.eqLabelArray = assignFluxEq2Label(self.lineLabels, self.lineIons)
@@ -298,6 +300,65 @@ class SpectraSynthesizer(MCOutputDisplay):
         return
 
     def inference_IFUmodel_emission(self, include_reddening=True, include_Thigh_prior=True):
+
+        # Container to store the synthetic line fluxes
+        fluxTensor = tt.zeros(self.lineLabels.size)
+
+        with pymc3.Model() as self.inferenModel:
+
+            # Gas priors
+            n_e = self.set_prior('n_e')
+            T_low = self.set_prior('T_low')
+            cHbeta = self.set_prior('cHbeta')  # TODO add the a mechanism to preload a reddening
+            T_high = self.set_prior('T_high') if include_Thigh_prior else TOIII_TSIII_relation(T_low)
+
+            # Abundance priors
+            for idx in range(self.obsIons.size):
+                ion = self.obsIons[idx]
+                if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
+                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
+
+            # Specific transition priors
+            tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
+
+            # Loop through the lines and compute the synthetic fluxes
+            for i in self.linesRangeArray:
+                i_region = self.region_vector[i]
+                lineLabel = self.lineLabels[i]
+                lineIonRef = self.lineIons[i]
+                lineIon = self.lineLocalIon[i] # TODO warning this is local
+                lineFlambda = self.lineFlambda[i]
+                fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
+                emisCoef = self.emisCoef[lineLabel]
+                emisEq = self.emisGridInterp[lineLabel]
+
+                lineFlux_i = calcEmFluxes_IFU(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region], tau[i_region],
+                                          self.abund_dict,
+                                          i, lineLabel, lineIon, lineFlambda,
+                                          fluxEq=fluxEq,
+                                          ftau_coeffs=self.ftauCoef,
+                                          emisCoeffs=emisCoef,
+                                          emis_func=emisEq,
+                                          indcsLabelLines=self.indcsLabelLines,
+                                          He1r_check=self.indcsIonLines['He1r'],
+                                          HighTemp_check=self.highTemp_check,
+                                          idx_region=i_region)
+
+                # Assign the new value in the tensor
+                fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
+
+            # Store computed fluxes
+            pymc3.Deterministic('calcFluxes_Op', fluxTensor)
+
+            # Likelihood gas components
+            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.emissionErr, observed=self.emissionFluxes)
+
+            # Display simulation data
+            displaySimulationData(self.inferenModel)
+
+        return
+
+    def inference_IFUmodel_emission_backUp(self, include_reddening=True, include_Thigh_prior=True):
 
         # Container to store the synthetic line fluxes
         fluxTensor = tt.zeros(self.lineLabels.size)

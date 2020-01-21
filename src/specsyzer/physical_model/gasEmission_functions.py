@@ -59,6 +59,37 @@ def calcEmFluxes_IFU(Tlow, Thigh, ne, cHbeta, tau, abund_dict,
 
     # Appropriate data for the ion
     Te_calc = Thigh if HighTemp_check[idx] else Tlow
+    emisCoord = tt.stack([Te_calc, ne], axis=-1)
+
+    # Line Emissivity
+    line_emis = emis_func.evaluate(emisCoord)
+
+    # Atom abundance
+    line_abund = abund_dict[lineIon]
+
+    # ftau correction for HeI lines # TODO This will increase in complexity fast need alternative
+    if He1r_check[idx]: # if lineIon == 'He1r_0':
+        line_ftau = ftau_func(tau, Te_calc, ne, *ftau_coeffs[lineLabel])
+    else:
+        line_ftau = None
+
+    # Lines flux with special correction: # TODO a dictionary might be better as the number of line increases
+    if indcsLabelLines['O2_7319A_b'][idx]: #if lineLabel == 'O2_7319A_b':
+        fluxEq_i = fluxEq(line_emis, cHbeta, lineFlambda, line_abund, abund_dict['O3_' + str(idx_region)], Thigh)
+
+    # Classical line flux
+    else:
+        fluxEq_i = fluxEq(line_emis, cHbeta, lineFlambda, line_abund, line_ftau, continuum=0.0)
+
+    return fluxEq_i
+
+def calcEmFluxes_IFU_backUp(Tlow, Thigh, ne, cHbeta, tau, abund_dict,
+                 idx, lineLabel, lineIon, lineFlambda,
+                 fluxEq, ftau_coeffs, emisCoeffs, emis_func,
+                 indcsLabelLines, He1r_check, HighTemp_check, idx_region):
+
+    # Appropriate data for the ion
+    Te_calc = Thigh if HighTemp_check[idx] else Tlow
 
     # Line Emissivity
     line_emis = emis_func((Te_calc, ne), *emisCoeffs)

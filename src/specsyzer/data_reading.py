@@ -539,8 +539,11 @@ def load_MC_fitting(db_address, return_dictionary=True, normConstants=None):
         for parameter in trace.varnames:
             if ('_log__' not in parameter) and ('interval' not in parameter):
                 prior_key = parameter + '_prior'
-                trace_norm = normConstants[prior_key][3] if prior_key in normConstants else 1.0
-                trace_i = trace_norm * trace[parameter]
+                if normConstants is not None:
+                    trace_norm = normConstants[prior_key][3] if prior_key in normConstants else 1.0
+                    trace_i = trace_norm * trace[parameter]
+                else:
+                    trace_i = trace[parameter]
                 traces_dict[parameter] = trace_i
 
         return traces_dict

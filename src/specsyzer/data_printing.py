@@ -59,6 +59,7 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'sigma_star': r'$\sigma_{\star}$',
              'Av_star': r'$Av_{\star}$',
              'chiSq_ssp': r'$\chi^{2}_{SSP}$',
+             'x': r'x interpolator$',
              'ICF_SIV': r'$ICF\left(S^{3+}\right)$'
              }
 

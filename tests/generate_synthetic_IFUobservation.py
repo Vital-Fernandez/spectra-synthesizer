@@ -6,7 +6,7 @@ import src.specsyzer as ss
 user_folder = os.path.join(os.path.expanduser('~'), '')
 
 # Loop through the number of input objects
-n_objs = 10
+n_objs = 1
 for n_obj in range(n_objs):
 
     # Dictionary storing synthetic data
