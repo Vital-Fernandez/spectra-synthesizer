@@ -7,7 +7,7 @@ from data_reading import parseConfDict
 from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_TSIII_relation
-from physical_model.gasEmission_functions import calcEmFluxes, calcEmFluxes_IFU, EmissionTensors, assignFluxEq2Label
+from physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors, assignFluxEq2Label
 
 # Disable compute_test_value in theano zeros tensor
 theano.config.compute_test_value = "ignore"
@@ -52,7 +52,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         self.pymc3Dist = {'Normal': pymc3.Normal, 'Lognormal': pymc3.Lognormal}
 
-    def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region, minErr=None, verbose=True):
+    def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region=0, minErr=None, verbose=True):
 
         ext_region = f'_{n_region}'
         n_lines = objLinesDF.index.size
@@ -66,7 +66,9 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.region_data[f'emisCoef_{n_region}'] = ion_model.emisCoeffs
         self.region_data[f'emisEq_{n_region}'] = ion_model.ionEmisEq_fit
         self.region_data[f'ftauCoef_{n_region}'] = ion_model.ftau_coeffs
-        self.region_data[f'emisGridInterp_{n_region}'] = ion_model.emisGridInterp
+
+        # TODO establish a loop to store the properties
+        self.region_data[f'emisGridDict_{n_region}'] = ion_model.emisGridDict
 
         self.region_data[f'indcsLabelLines_{n_region}'] = chemistry_model.indcsLabelLines
         self.region_data[f'indcsIonLines_{n_region}'] = chemistry_model.indcsIonLines
@@ -82,7 +84,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         param_list = ['lineLabels', 'lineIons', 'emissionFluxes', 'emissionErr', 'lineFlambda', 'lineFlambda',
                       'highTemp_check', 'obsIons']
 
-        dictionary_list = ['emisCoef', 'emisEq', 'ftauCoef', 'emisEq', 'emisGridInterp']
+        dictionary_list = ['emisCoef', 'emisEq', 'ftauCoef', 'emisEq', 'emisGridDict']
 
         combine_dict_list = ['indcsLabelLines', 'indcsIonLines']
 
@@ -143,9 +145,6 @@ class SpectraSynthesizer(MCOutputDisplay):
         for i in range(self.total_regions):
             hydrogen_key = 'H1r_' + str(i)
             self.abund_dict[hydrogen_key] = 1.0
-
-        for idx in range(len(self.lineLabels)):
-            print(self.lineLabels[idx], self.lineIons[idx], self.lineLocalIon[idx])
 
         # Establish minimum error on lines: # TODO Should this operation be at the point we import the fluxes?
         if minErr is not None:
@@ -214,7 +213,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
-    def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=1, verbose=True):
+    def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=0, verbose=True):
 
         # Combine regions data
         self.set_simulation_variables()
@@ -299,7 +298,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
-    def inference_IFUmodel_emission(self, include_reddening=True, include_Thigh_prior=True):
+    def inference_emisEq_model(self, include_reddening=True, include_Thigh_prior=True):
 
         # Container to store the synthetic line fluxes
         fluxTensor = tt.zeros(self.lineLabels.size)
@@ -330,9 +329,9 @@ class SpectraSynthesizer(MCOutputDisplay):
                 lineFlambda = self.lineFlambda[i]
                 fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
                 emisCoef = self.emisCoef[lineLabel]
-                emisEq = self.emisGridInterp[lineLabel]
+                emisEq = self.emisEq[lineLabel]
 
-                lineFlux_i = calcEmFluxes_IFU(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region], tau[i_region],
+                lineFlux_i = calcEmFluxes_Eq(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region], tau[i_region],
                                           self.abund_dict,
                                           i, lineLabel, lineIon, lineFlambda,
                                           fluxEq=fluxEq,
@@ -342,7 +341,67 @@ class SpectraSynthesizer(MCOutputDisplay):
                                           indcsLabelLines=self.indcsLabelLines,
                                           He1r_check=self.indcsIonLines['He1r'],
                                           HighTemp_check=self.highTemp_check,
-                                          idx_region=i_region)
+                                          region_ext=f'_{i_region}')
+
+                # Assign the new value in the tensor
+                fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
+
+            # Store computed fluxes
+            pymc3.Deterministic('calcFluxes_Op', fluxTensor)
+
+            # Likelihood gas components
+            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.emissionErr, observed=self.emissionFluxes)
+
+            # Display simulation data
+            displaySimulationData(self.inferenModel)
+
+        return
+
+    def inference_emisGrid_model(self, include_reddening=True, include_Thigh_prior=True):
+
+        # Container to store the synthetic line fluxes
+        fluxTensor = tt.zeros(self.lineLabels.size)
+
+        with pymc3.Model() as self.inferenModel:
+
+            # Gas priors
+            n_e = self.set_prior('n_e')
+            T_low = self.set_prior('T_low')
+            cHbeta = self.set_prior('cHbeta')  # TODO add the a mechanism to preload a reddening
+            T_high = self.set_prior('T_high') if include_Thigh_prior else TOIII_TSIII_relation(T_low)
+
+            emisCoord_low = tt.stack([[T_low[0]], [n_e[0]]],axis=-1)  # TODO very inefficient for multiple regions?
+            emisCoord_high = tt.stack([[T_high[0]], [n_e[0]]], axis=-1)
+
+            # Abundance priors
+            for idx in range(self.obsIons.size):
+                ion = self.obsIons[idx]
+                if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
+                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
+
+            # Specific transition priors
+            tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
+
+            # Loop through the lines and compute the synthetic fluxes
+            for i in self.linesRangeArray:
+                i_region = self.region_vector[i]
+                lineLabel = self.lineLabels[i]
+                lineIonRef = self.lineIons[i]
+                lineIon = self.lineLocalIon[i] # TODO warning this is local
+                lineFlambda = self.lineFlambda[i]
+                fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
+                emisInter = self.emisGridDict[lineLabel]
+
+                # emisCoord_low = tt.stack([[T_low[i_region]], [n_e[i_region]]], axis=-1) # TODO very inefficient for multiple regions?
+                # emisCoord_high = tt.stack([[T_high[i_region]], [n_e[i_region]]], axis=-1)
+
+                lineFlux_i = calcEmFluxes_Grid(T_low[i_region], T_high[i_region], n_e[i_region], emisCoord_low, emisCoord_high,
+                                                     cHbeta[i_region], tau[i_region], self.abund_dict,
+                                                     i, lineLabel, lineIon, lineFlambda,
+                                                     emisInter, fluxEq, self.ftauCoef,
+                                                     self.indcsLabelLines, self.indcsIonLines['He1r'],
+                                                     self.highTemp_check,
+                                                     region_ext=f'_{i_region}')
 
                 # Assign the new value in the tensor
                 fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
@@ -424,7 +483,6 @@ class SpectraSynthesizer(MCOutputDisplay):
         trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel)
 
         #Adapt the database to the prior configuration
-        print('HI')
         model_param = np.array(trace.varnames)
         prior_param = self.priorDict.keys()
 
@@ -440,7 +498,6 @@ class SpectraSynthesizer(MCOutputDisplay):
 
             if ref_name in prior_param:
                 reparam0 = self.priorDict[ref_name][3]
-                print('--',idx, param, ref_name, reparam0, '\n')
                 trace.add_values({param:trace[param] * reparam0}, overwrite=True)
 
         # Save the database

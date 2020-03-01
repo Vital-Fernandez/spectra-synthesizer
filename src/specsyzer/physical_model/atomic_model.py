@@ -94,6 +94,8 @@ class EmissivitySurfaceFitter():
 
         labels_list = linesDF.index.values
 
+        #TODO integrate this function inside the compute emissivity method
+
         # Dictionary to store the emissivity surface coeffients
         for i in range(labels_list.size):
             lineLabel = labels_list[i]
@@ -160,7 +162,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
                     print(f'-- Warning: No emissivity coefficients available for line {line}')
         return
 
-    def computeEmissivityGrid(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r',
+    def computeEmissivityGrids(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r',
                               norm_pynebCode=4861, linesDb=None):
 
         labels_list = linesDF.index.values
@@ -172,7 +174,6 @@ class IonEmissivity(EmissivitySurfaceFitter):
         Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempRange, self.denRange, wave=norm_pynebCode)
 
         self.emisGridDict = {}
-        self.emisGridInterp = {}
 
         for i in range(len(labels_list)):
 
@@ -188,24 +189,26 @@ class IonEmissivity(EmissivitySurfaceFitter):
                 # Check if it is a blended line:
                 if '_b' not in line_label:
                     # TODO I should change wave by label
-                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=pynebCode_list[i])
+                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange,
+                                                                      wave=pynebCode_list[i])
 
                 else:
-                    emis_grid_i = np.zeros(self.Hbeta_emis_grid.shape)
+                    emis_grid_i = np.zeros(Hbeta_emis_grid.shape)
                     for component in blended_list[i].split(','):
                         component_wave = linesDb.loc[component].pynebCode
-                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempGridFlatten, self.denGridFlatten,
+                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange,
                                                                            wave=component_wave)
                 if grids_folder is not None:
                     np.save(grids_folder, emis_grid_i)
 
             # Save along the number of points
-            self.emisGridDict[line_label] = np.log10(emis_grid_i / Hbeta_emis_grid)
-            self.emisGridInterp[line_label] = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
-                                                                                self.emisGridDict[line_label][:, :, None], nout=1)
+            emis_grid_i_norm = np.log10(emis_grid_i / Hbeta_emis_grid)
+            emis_grid_i_interp = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange], emis_grid_i_norm[:, :, None], nout=1)
+            self.emisGridDict[line_label] = emis_grid_i_interp.evaluate
+
         return
 
-    def computeEmissivityGrid_equations(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r',
+    def computeEmissivityEquations(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r',
                               norm_pynebCode=4861, linesDb=None):
 
         labels_list = linesDF.index.values
@@ -214,10 +217,10 @@ class IonEmissivity(EmissivitySurfaceFitter):
         blended_list = linesDF.blended.values
 
         # Generate a grid with the default reference line
-        Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempGridFlatten, self.denGridFlatten, wave=norm_pynebCode, product=False)
+        Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempGridFlatten, self.denGridFlatten, wave=norm_pynebCode,
+                                                          product=False)
 
         self.emisGridDict = {}
-        self.emisGridInterp = {}
         for i in range(len(labels_list)):
 
             # Line emissivity references
@@ -245,6 +248,5 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
             # Save along the number of points
             self.emisGridDict[line_label] = np.log10(emis_grid_i / Hbeta_emis_grid)
-            self.emisGridInterp[line_label] = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
-                                                                                self.emisGridDict[line_label][:, :, None], nout=1)
+
         return

@@ -125,68 +125,68 @@ for i in np.arange(len(objLinesDF)):
     print(lineLabel, lineIon, lineFlambda, lineWaves[i], Te_calc, ne, lineEmis_true, lineEmis_interp[0][0], lineFluxes[i])
 
 
-# # Calculation with pymc3
-# fluxTensor = tt.zeros(lineWaves.size)
-# rangeLines = np.arange(lineWaves.size)
-# HighTemp_check = objChem.indcsHighTemp
-# interpDict = objIons.emisGridInterp
-#
-# with pymc3.Model() as inferenModel:
-#
-#     # Prior
-#     ne = 100.0 * pymc3.Lognormal('n_e', mu=0, sigma=1, shape=(1,))
-#     T_low = pymc3.Normal('T_low', mu=15000, sigma=2500, shape=(1,))
-#     T_high = pymc3.Normal('T_high', mu=15000, sigma=2500, shape=(1,))
-#     cHbeta_prior = pymc3.Lognormal('cHbeta', mu=0, sigma=1)
-#
-#     emisCoord_low = tt.stack([T_low, ne], axis=-1)
-#     emisCoord_high = tt.stack([T_high, ne], axis=-1)
-#
-#     # Abundance priors
-#     abund_dict = {'H1r': 1.0}
-#     for ion in obsIons:
-#         if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
-#             abund_dict[ion] = pymc3.Normal(ion, mu=5, sigma=5)
-#
-#     # Specific transition priors
-#     tau = 0.0
-#
-#     for i in rangeLines:
-#
-#         lineLabel = lineLabels[i]
-#         lineIon = lineIons[i]
-#         line_abund = abund_dict[lineIon]
-#         line_flambda = lineFlambdas[i]
-#         line_ftau = None
-#
-#         # Appropriate data for the ion
-#         Te_calc = emisCoord_high if HighTemp_check[i] else emisCoord_low
-#
-#         # Line Emissivity
-#         line_emis = interpDict[lineLabel].evaluate(Te_calc)
-#         fluxEq = emtt.emFlux_ttMethods[eqLabelArray[i]]
-#
-#         #Compute flux
-#         lineFlux_i = fluxEq(line_emis[0][0], cHbeta_prior, line_flambda, line_abund, line_ftau, continuum=0.0)
-#
-#         # Assign the new value in the tensor
-#         fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
-#
-#     # Store computed fluxes
-#     pymc3.Deterministic('calcFluxes_Op', fluxTensor)
-#
-#     # Likelihood gas components
-#     Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=lineErrFlux, observed=lineFluxes)
-#
-#     # Display simulation data
-#     displaySimulationData(inferenModel)
-#
-#     # Run the model
-#     trace = pymc3.sample(5000, tune=2000, chains=2, cores=1)
+# Calculation with pymc3
+fluxTensor = tt.zeros(lineWaves.size)
+rangeLines = np.arange(lineWaves.size)
+HighTemp_check = objChem.indcsHighTemp
+interpDict = objIons.emisGridInterp
 
-# # Save the database
-# with open(output_db, 'wb') as trace_pickle:
-#     pickle.dump({'model': inferenModel, 'trace': trace}, trace_pickle)
+with pymc3.Model() as inferenModel:
+
+    # Prior
+    ne = 100.0 * pymc3.Lognormal('n_e', mu=0, sigma=1, shape=(1,))
+    T_low = pymc3.Normal('T_low', mu=15000, sigma=2500, shape=(1,))
+    T_high = pymc3.Normal('T_high', mu=15000, sigma=2500, shape=(1,))
+    cHbeta_prior = pymc3.Lognormal('cHbeta', mu=0, sigma=1)
+
+    emisCoord_low = tt.stack([T_low, ne], axis=-1)
+    emisCoord_high = tt.stack([T_high, ne], axis=-1)
+
+    # Abundance priors
+    abund_dict = {'H1r': 1.0}
+    for ion in obsIons:
+        if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
+            abund_dict[ion] = pymc3.Normal(ion, mu=5, sigma=5)
+
+    # Specific transition priors
+    tau = 0.0
+
+    for i in rangeLines:
+
+        lineLabel = lineLabels[i]
+        lineIon = lineIons[i]
+        line_abund = abund_dict[lineIon]
+        line_flambda = lineFlambdas[i]
+        line_ftau = None
+
+        # Appropriate data for the ion
+        Te_calc = emisCoord_high if HighTemp_check[i] else emisCoord_low
+
+        # Line Emissivity
+        line_emis = interpDict[lineLabel].evaluate(Te_calc)
+        fluxEq = emtt.emFlux_ttMethods[eqLabelArray[i]]
+
+        #Compute flux
+        lineFlux_i = fluxEq(line_emis[0][0], cHbeta_prior, line_flambda, line_abund, line_ftau, continuum=0.0)
+
+        # Assign the new value in the tensor
+        fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
+
+    # Store computed fluxes
+    pymc3.Deterministic('calcFluxes_Op', fluxTensor)
+
+    # Likelihood gas components
+    Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=lineErrFlux, observed=lineFluxes)
+
+    # Display simulation data
+    displaySimulationData(inferenModel)
+
+    # Run the model
+    trace = pymc3.sample(5000, tune=2000, chains=2, cores=1)
+
+# Save the database
+with open(output_db, 'wb') as trace_pickle:
+    pickle.dump({'model': inferenModel, 'trace': trace}, trace_pickle)
 
 # Load the .db file
 with open(output_db, 'rb') as trace_restored:

@@ -26,7 +26,8 @@ from .data_reading import *
 from .physical_model.extinction_model import ExtinctionModel
 from .physical_model.atomic_model import IonEmissivity, compute_emissivity_grid
 from .physical_model.chemical_model import DirectMethod, TOIII_TSIII_relation
-from .physical_model.gasEmission_functions import calcEmFluxes, EmissionTensors, assignFluxEq2Label
+from .physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors, assignFluxEq2Label,\
+    gridInterpolatorFunction
 from inference_model import SpectraSynthesizer
 
 # Get default configuration settings
