@@ -1,275 +1,100 @@
-import pymc3
+import pymc3 as pm
 import theano.tensor as tt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from scipy import stats, optimize, integrate
+from pathlib import Path
+from src.specsyzer.physical_model.line_tools import LineMeasurer, gaussFunc
+from matplotlib import pyplot as plt, rcParams
 from inference_model import displaySimulationData
-from astropy.io import fits
-
-gauss_coef = np.sqrt(2 * np.pi)
-
-# Gaussian curves
-def gaussFunc(ind_params, a, mu, sigma):
-    x, z = ind_params
-    return a * np.exp(-((x - mu) * (x - mu)) / (2 * (sigma * sigma))) + z
 
 
-def gaussFunc_tt(x, z, a, mu, sigma):
-    return a * np.exp(-((x - mu) * (x - mu)) / (2 * (sigma * sigma))) + z
+def mixture_density_mult(w, mu, sd, x):
+    logp = tt.log(w) + pm.Normal.dist(mu, sd).logp(x)
+    return tt.sum(tt.exp(logp), axis=1)
 
 
-def gaussFuncArea(ind_params, area, mu, sigma):
-    x, z = ind_params
-    return (area/(sigma*gauss_coef)) * np.exp(-((x - mu) * (x - mu)) / (2 * (sigma * sigma))) + z
+# Line treatment object
+lm = LineMeasurer()
 
+# Declare data
+data_folder, data_file = Path('C:/Users/Vital/OneDrive/Desktop/'), 'test_spec2.txt'
+file_to_open = data_folder / data_file
+linesLogAdress = data_folder / data_file.replace('.txt', '_linesLog.txt')
+linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsyzer/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
+linesDF = lm.load_lineslog(linesLogAdress)
 
-def gaussFuncArea_tt(x, z, area, mu, sigma):
-    return (area/(sigma*gauss_coef)) * np.exp(-((x - mu) * (x - mu)) / (2 * (sigma * sigma))) + z
+# Load spectrum
+factor = 1e17
+redshift = 1.0046
+wave, flux = np.loadtxt(file_to_open, unpack=True)
+wave, flux = wave/redshift, flux * 1e-20 * factor
+# cropLimits, noiseLimits = (9032, 9200), (9080, 9120)
+# cropLimits, noiseLimits = (9032, 9300), (9090, 9200)
+cropLimits, noiseLimits = (8400, 9300), (8888, 9000)
+# cropLimits, noiseLimits = (4730, 7350), (5550, 5850)
 
-# Data location
-log_file = 'E:/Dropbox/Astrophysics/Data/WHT_observations/bayesianModel/8/8_linesLog.txt'
-spec_file = 'E:/Dropbox/Astrophysics/Data/WHT_observations/objects/8/8_WHT.fits'
+# Crop the spectrum
+idx = (cropLimits[0] <= wave) & (wave <= cropLimits[1])
+wave, flux = wave[idx], flux[idx]
+lm.wave, lm.flux = wave, flux
 
-# Get data
-data_array, Header_0 = fits.getdata(spec_file, header=True)
-obj_df = pd.read_csv(log_file, delim_whitespace=True, header=0, index_col=0)
+# Remove the continuum
+flux_noContinuum = lm.continuum_remover(noiseWaveLim=noiseLimits)
+continuumFlux = lm.flux - flux_noContinuum
 
-fluxHbeta = obj_df.loc['H1_4861A', 'flux_intg']
+# Plot the spectrum
+lm.spectrum_components(continuumFlux, matchedLinesDF=linesDF, noise_region=noiseLimits)
 
-listLabels = np.array(['O3_4959A', 'O3_5007A', 'He1_5876A', 'H1_6563A'])
-gaussParams = np.ones((listLabels.size, 3))
-line_dict, cont_dict, lineCont_dict, std_dict = {}, {}, {}, {}
+# Line data:
+idcsDF = (linesDF.wavelength >= lm.wave[0]) & (linesDF.wavelength <= lm.wave[-1])
+lineLabel = linesDF.loc[idcsDF].index.values
+lineWaves = linesDF.loc[idcsDF].wavelength.values
+lineRanges = linesDF.loc[idcsDF, 'w1':'w6'].values
+print(f'- Fitting {lineLabel.size} lines')
 
-for i in range(listLabels.size):
+indexSpecEmission = np.zeros(lm.wave.size, dtype=bool)
+for i in np.arange(lineLabel.size):
+    idxLine = (lineRanges[i][2] <= lm.wave) & (lm.wave <= lineRanges[i][3])
+    indexSpecEmission += idxLine
 
-    lineLabel = listLabels[i]
-    wave, flux = data_array['Wave'], data_array['Int']/fluxHbeta
-    wave_loc = obj_df.loc[lineLabel, 'w1':'w6'].values
+# Define input spectrum
+specWave = lm.wave[indexSpecEmission][:,None]
+specFlux = lm.flux[indexSpecEmission]
+specContinuum = continuumFlux[indexSpecEmission]
+pixelErr = linesDF.loc[lineLabel, 'std_continuum']
 
-    # Identify line regions
-    area_indcs = np.searchsorted(wave, wave_loc)
-    idcsLines = ((wave[area_indcs[2]] <= wave[None]) & (wave[None] <= wave[area_indcs[3]])).squeeze()
-    idcsContinua = (((wave[area_indcs[0]] <= wave[None]) & (wave[None] <= wave[area_indcs[1]])) | (
-            (wave[area_indcs[4]] <= wave[None]) & (wave[None] <= wave[area_indcs[5]]))).squeeze()
+with pm.Model():
 
-    # Get regions data
-    lineWave, lineFlux = wave[idcsLines], flux[idcsLines]
-    continuaWave, continuaFlux = wave[idcsContinua], flux[idcsContinua]
+    # Model Priors
+    amp_array = pm.HalfNormal('amp_array', 10., shape=lineLabel.size)
+    my_array = pm.Normal('mu_array', lineWaves, 2., shape=lineLabel.size)
+    sigma_array = pm.HalfCauchy('sigma_array', 5., shape=lineLabel.size)
+    pixelNoise = pm.HalfCauchy('pixelNoise', 5.)
 
-    # Linear region fitting
-    slope, intercept, r_value, p_value, std_err = stats.linregress(continuaWave, continuaFlux)
-    continuaFit = continuaWave * slope + intercept
-    std_continuum = np.std(continuaFlux - continuaFit)
-    lineContinuumFit = lineWave * slope + intercept
-    continuumInt = lineContinuumFit.sum()
-    centerWave = lineWave[np.argmax(lineFlux)]
-    centerContInt = centerWave * slope + intercept
+    # Theoretical line profiles
+    theoFlux_i = mixture_density_mult(amp_array, my_array, sigma_array, specWave) + specContinuum
 
-    # Standard fitting
-    p0 = (lineFlux.max() * 1.5 * gauss_coef, lineWave.mean(), 1.0)
-    fitParams, cov = optimize.curve_fit(gaussFuncArea, (lineWave, lineContinuumFit), lineFlux, p0=p0)
+    # Model likelihood
+    pm.Normal('emission_Y', theoFlux_i, pixelNoise, observed=specFlux)
 
-    # Store the data
-    line_dict[lineLabel] = np.vstack((lineWave, lineFlux))
-    cont_dict[lineLabel] = np.vstack((continuaWave, continuaFlux))
-    lineCont_dict[lineLabel] = np.vstack((lineWave, lineContinuumFit))
-    std_dict[lineLabel] = std_continuum
-    gaussParams[i, :] = fitParams
+    # Run sampler
+    trace = pm.sample(draws=1000, tune=1000, chains=2, cores=1)
 
-print(gaussParams)
+# Reconstruct from traces the results
+amp_trace, mu_trace, sigma_trace = trace['amp_array'], trace['mu_array'], trace['sigma_array']
+amp_mean, mu_mean, sigma_mean = amp_trace.mean(axis=0), mu_trace.mean(axis=0), sigma_trace.mean(axis=0)
+print(trace['amp_array'].mean(axis=0))
 
-# resampleWaveLine = np.linspace(lineWave[0]-10, lineWave[-1]+10, 100)
-# resampleWaveCont = resampleWaveLine * slope + intercept
-# gaussianCurve = gaussFunc((resampleWaveLine, resampleWaveCont), *fitParams)
+wave_resample = np.linspace(lm.wave[0], lm.wave[-1], lm.wave.size * 20)
+cont_resample = np.interp(wave_resample, lm.wave, continuumFlux)
+hmc_curve = mixture_density_mult(amp_mean, mu_mean, sigma_mean, wave_resample[:, None]).eval()
 
-# Stack line data arrays
-wave_vector = np.array([])
-flux_vector = np.array([])
-cont_vector = np.array([])
-err_vector = np.array([])
-idxLine_dict = dict.fromkeys(listLabels, np.array([0, 0]))
+# Plot the results
+fig, ax = plt.subplots()
+ax.step(lm.wave, lm.flux, label='Object spectrum')
+ax.scatter(specWave, specFlux, label='Line', color='tab:orange')
+ax.plot(wave_resample, hmc_curve + cont_resample, label='HMC fitting',  color='tab:red')
+ax.legend()
+ax.update({'xlabel':'Wavelength', 'ylabel':'Flux', 'title':'Gaussian fitting'})
+plt.show()
 
-for i in range(listLabels.size):
-
-    lineLabel = listLabels[i]
-    idxLine_dict[lineLabel][0] = wave_vector.size
-    wave_vector = np.hstack((wave_vector, line_dict[lineLabel][0, :]))
-    flux_vector = np.hstack((flux_vector, line_dict[lineLabel][1, :]))
-    cont_vector = np.hstack((cont_vector, lineCont_dict[lineLabel][1, :]))
-    err_vector = np.hstack((err_vector, np.ones(line_dict[lineLabel][0, :].size) * std_dict[lineLabel]))
-    idxLine_dict[lineLabel][1] = wave_vector.size
-
-print(idxLine_dict)
-#
-# fig, ax = plt.subplots()
-# ax.plot(wave_vector, flux_vector, label='Observed line')
-# ax.errorbar(wave_vector, cont_vector, label='Continuum', yerr=err_vector, fmt='o')
-# ax.legend()
-# ax.update({'xlabel':'Wavelength', 'ylabel':'Flux', 'title':'Gaussian fitting'})
-# plt.show()
-
-
-# PyMC3 fitting
-
-# Container to store the synthetic line fluxes
-# fluxTensor = tt.zeros(wave_vector.size)
-# rangeLines = np.arange(listLabels.size)
-# with pymc3.Model() as model:
-#
-#     amp_line = pymc3.Lognormal('amp_line', 0, 1, shape=listLabels.size)
-#     mu_line = pymc3.Normal('mu_line', 0, 30, shape=listLabels.size)
-#     sigma_line = pymc3.Lognormal('sigma_line', 0, 1, shape=listLabels.size)
-#
-#     for idx_line in rangeLines:
-#         lineLabel = listLabels[idx_line]
-#         lineWave = line_dict[lineLabel][0, :]
-#         lineFlux = line_dict[lineLabel][1, :]
-#         lineContFlux = lineCont_dict[lineLabel][1, :]
-#         std_continuum = std_dict[lineLabel]
-#
-#         lineArea = gaussParams[idx_line, 0]
-#         line_mu = mu_line[idx_line] + gaussParams[idx_line, 1]
-#
-#         fluxline_theo_i = gaussFunc_tt(lineWave, lineContFlux, amp_line[idx_line], line_mu, sigma_line[idx_line])
-#
-#     fluxTensor = tt.inc_subtensor(fluxTensor[:], fluxline_theo_i)
-#
-#     likelihood_i = pymc3.Normal(lineLabel, mu=fluxTensor, sd=err_vector, observed=flux_vector)
-#
-#     displaySimulationData(model)
-#
-#     trace = pymc3.sample(draws=2000, tune=500, chains=2, cores=1)
-
-# # HMC results
-# amp_trace, mu_trace, sigma_trace = trace['amp_line'], trace['mu_line'], trace['sigma_line']
-# lineFluxHMC, areaHMC = trace['fluxCurves'], trace['areaHMC']
-# gaussianCurveHMC = gaussFunc_tt(resampleWaveLine, resampleWaveCont, amp_trace.mean(), mu_trace.mean(), sigma_trace.mean())
-#
-# # Testing flux integrations
-# AreaSimps = integrate.simps(lineFlux, lineWave) - integrate.simps(lineContinuumFit, lineWave)
-# AreaTrapz = integrate.trapz(lineFlux, lineWave) - integrate.trapz(lineContinuumFit, lineWave)
-# AreaGauss = np.sqrt(2*np.pi*sigma**2)*amp
-#
-# print(f'Area sum: {AreaSimps}')
-# print(f'Simpsons rule: {AreaSimps}')
-# print(f'Trapezoid rule: {AreaTrapz}')
-# print(f'Gaussian area: {AreaGauss}')
-# print(f'HMC area: {areaHMC.mean()}, {areaHMC.std()}')
-#
-# fig, ax = plt.subplots()
-# ax.plot(wave, flux, label='Observed line')
-# ax.scatter(continuaWave, continuaFlux, label='Continuum regions')
-# ax.plot(lineWave, lineFlux, label='LineRegion', linestyle=':')
-# ax.plot(lineWave, lineContinuumFit, label='Observed line', linestyle=':')
-# ax.plot(resampleWaveLine, gaussianCurve, label='Gaussian fit', linestyle=':')
-# # ax.plot(lineWave, lineFluxHMC.mean(axis=0), label='HMC fit', linestyle=':')
-# ax.plot(resampleWaveLine, gaussianCurveHMC, label='HMC fit resample', linestyle='--')
-# ax.set_xlim(continuaWave.min(), continuaWave.max())
-# ax.set_ylim(bottom=continuaFlux.mean()/100, top=lineFlux.max() * 1.2)
-#
-# ax.legend()
-# ax.update({'xlabel':'Flux', 'ylabel':'Wavelength', 'title':'Gaussian fitting'})
-# plt.show()
-
-
-# import pymc3
-# import numpy as np
-# import matplotlib.pyplot as plt
-# from scipy import stats, optimize, integrate
-# from inference_model import displaySimulationData
-#
-# # Gaussian curves
-# def gaussFunc(ind_params, a, mu, sigma):
-#     x, z = ind_params
-#     return a * np.exp(-((x - mu) * (x - mu)) / (2 * (sigma * sigma))) + z
-#
-#
-# def gaussFunc_tt(x, z, a, mu, sigma):
-#     return a * np.exp(-((x - mu) * (x - mu)) / (2 * (sigma * sigma))) + z
-#
-#
-# # Fake data
-# wave = np.linspace(4950, 5050)
-# flux_cont = 0.0 * wave + 2.0 + np.random.normal(0, 0.5, wave.size)
-# ampTrue, muTrue, sigmaTrue = 10, 5007, 2.3
-# flux_gauss = gaussFunc((wave, flux_cont), ampTrue, muTrue, sigmaTrue)
-# w1, w2, w3, w4, w5, w6 = 4960, 4980, 4996, 5015, 5030, 5045
-# wave_regions = np.array([w1, w2, w3, w4, w5, w6])
-# areaTrue = np.sqrt(2*np.pi*sigmaTrue**2)*ampTrue
-#
-# # Identify line regions
-# area_indcs = np.searchsorted(wave, wave_regions)
-# idcsLines = ((wave[area_indcs[2]] <= wave[None]) & (wave[None] <= wave[area_indcs[3]])).squeeze()
-# idcsContinua = (((wave[area_indcs[0]] <= wave[None]) & (wave[None] <= wave[area_indcs[1]])) | (
-#         (wave[area_indcs[4]] <= wave[None]) & (wave[None] <= wave[area_indcs[5]]))).squeeze()
-#
-#
-# # Get regions data
-# lineWave, lineFlux = wave[idcsLines], flux_gauss[idcsLines]
-# continuaWave, continuaFlux = wave[idcsContinua], flux_gauss[idcsContinua]
-#
-# # Linear region fitting
-# slope, intercept, r_value, p_value, std_err = stats.linregress(continuaWave, continuaFlux)
-# continuaFit = continuaWave * slope + intercept
-# std_continuum = np.std(continuaFlux - continuaFit)
-# lineContinuumFit = lineWave * slope + intercept
-# continuumInt = lineContinuumFit.sum()
-# centerWave = lineWave[np.argmax(lineFlux)]
-# centerContInt = centerWave * slope + intercept
-#
-# # Standard fitting
-# p0 = (lineFlux.max(), lineWave.mean(), 1.0)
-# fitParams, cov = optimize.curve_fit(gaussFunc, (lineWave, lineContinuumFit), lineFlux, p0=p0)
-# amp, mu, sigma = fitParams
-#
-# resampleWaveLine = np.linspace(lineWave[0]-10, lineWave[-1]+10, 100)
-# resampleWaveCont = resampleWaveLine * slope + intercept
-# gaussianCurve = gaussFunc((resampleWaveLine, resampleWaveCont), *fitParams)
-#
-# # PyMC3 fitting
-# with pymc3.Model() as model:
-#
-#     amp_line = pymc3.Normal('amp_line', 0, 20)
-#     mu_line = pymc3.Normal('mu_line', 5007, 30)
-#     sigma_line = pymc3.Lognormal('sigma_line', 0, 1)
-#
-#     fluxline_theo = gaussFunc_tt(lineWave, lineContinuumFit, amp_line, mu_line, sigma_line)
-#
-#     # Store computed fluxes
-#     pymc3.Deterministic('fluxCurves', fluxline_theo)
-#     pymc3.Deterministic('areaHMC', np.sqrt(2*np.pi*sigma_line*sigma_line)*amp_line)
-#
-#     likelihood_i = pymc3.Normal('likelihood', mu=fluxline_theo, sd=std_continuum, observed=lineFlux)
-#
-#     displaySimulationData(model)
-#
-#     trace = pymc3.sample(draws=2000, tune=500, chains=2, cores=1)
-#
-# # HMC results
-# amp_trace, mu_trace, sigma_trace = trace['amp_line'], trace['mu_line'], trace['sigma_line']
-# lineFluxHMC, areaHMC = trace['fluxCurves'], trace['areaHMC']
-# gaussianCurveHMC = gaussFunc_tt(resampleWaveLine, resampleWaveCont, amp_trace.mean(), mu_trace.mean(), sigma_trace.mean())
-#
-# # Testing flux integrations
-# AreaSimps = integrate.simps(lineFlux, lineWave) - integrate.simps(lineContinuumFit, lineWave)
-# AreaTrapz = integrate.trapz(lineFlux, lineWave) - integrate.trapz(lineContinuumFit, lineWave)
-# AreaGauss = np.sqrt(2*np.pi*sigma**2)*amp
-#
-# print(f'True area: {areaTrue}')
-# print(f'Simpsons rule: {AreaSimps}')
-# print(f'Trapezoid rule: {AreaTrapz}')
-# print(f'Gaussian area: {AreaGauss}')
-# print(f'HMC area: {areaHMC.mean()}, {areaHMC.std()}')
-#
-# fig, ax = plt.subplots()
-# ax.plot(wave, flux_gauss, label='Observed line')
-# ax.scatter(continuaWave, continuaFlux, label='Continuum regions')
-# ax.plot(lineWave, lineContinuumFit, label='Observed line', linestyle=':')
-# ax.plot(resampleWaveLine, gaussianCurve, label='Gaussian fit', linestyle=':')
-# ax.plot(lineWave, lineFluxHMC.mean(axis=0), label='HMC fit', linestyle=':')
-# ax.plot(resampleWaveLine, gaussianCurveHMC, label='HMC fit resample', linestyle='--')
-#
-# ax.legend()
-# ax.update({'xlabel':'Flux', 'ylabel':'Wavelength', 'title':'Gaussian fitting'})
-# plt.show()

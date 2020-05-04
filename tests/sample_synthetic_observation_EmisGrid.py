@@ -4,7 +4,8 @@ import src.specsyzer as ss
 
 # Search for the data in the default user folder
 n_objs = 1
-user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
+# user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
+user_folder = 'D:\\AstroModels\\'
 fileStructure = f'{user_folder}/GridEmiss_region'
 output_db = f'{fileStructure}s{n_objs}_db'
 
@@ -51,7 +52,7 @@ obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict
 obj1_model.inference_emisGrid_model()
 
 # Run the simulation
-obj1_model.run_sampler(output_db, 5000, 2000, njobs=2)
+obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
 simulation_outputfile = f'{fileStructure}s{n_objs}_results.txt'
 obj1_model.load_sampler_results(output_db, simulation_outputfile, n_regions=n_objs)
 
