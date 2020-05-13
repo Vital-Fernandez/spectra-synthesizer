@@ -12,6 +12,8 @@ output_db = f'{fileStructure}s{n_objs}_db'
 # Declare sampler
 obj1_model = ss.SpectraSynthesizer()
 
+excludeLines = 'all' #np.array(['He1_4471A', 'He2_4686A', 'He1_5876A', 'He1_7065A', 'He1_6678A', 'Ar4_4740A', 'Ar3_7136A', 'N2_6584A', 'N2_6548A'])
+
 # Loop through the number of regions
 for idx_obj in range(n_objs):
 
@@ -23,7 +25,7 @@ for idx_obj in range(n_objs):
     objParams = ss.loadConfData(simulationData_file)
 
     # Load emission lines
-    objLinesDF = ss.import_emission_line_data(linesLogAddress, input_lines='all')
+    objLinesDF = ss.import_emission_line_data(linesLogAddress, input_lines=excludeLines)
 
     # Declare simulation physical properties
     objRed = ss.ExtinctionModel(Rv=objParams['R_v'],

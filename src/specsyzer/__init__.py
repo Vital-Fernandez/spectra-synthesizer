@@ -29,6 +29,9 @@ from .physical_model.chemical_model import DirectMethod, TOIII_TSIII_relation
 from .physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors, assignFluxEq2Label,\
     gridInterpolatorFunction
 from inference_model import SpectraSynthesizer
+from .physical_model.line_tools import LineMeasurer
+from .data.spectra_files import import_fits_data
+from .print import plot
 
 # Get default configuration settings
 _default_cfg = loadConfData(os.path.join(_dir_path, 'config.ini'))

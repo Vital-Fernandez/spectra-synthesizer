@@ -36,7 +36,6 @@ obsLines = linesDb.loc[idcsObsLines].index.values
 lm.spectrum_components(lm.flux - flux_noContinuum, linesTable, linesDb)
 
 for i in np.arange(obsLines.size):
-# for i in np.arange(6):
 
     lineLabel = obsLines[i]
     print(f'- {lineLabel}:')
@@ -53,29 +52,6 @@ for i in np.arange(obsLines.size):
 
     # Store results in database
     lm.results_to_database(lineLabel, linesDb)
-
-# lineLabel = 'O3_4959A'
-# print(linesDb.loc[lineLabel])
-# wave_regions2 = linesDb.loc[lineLabel, 'w1':'w6'].values
-# idcsLinePeak, idcsContinua = lm.define_masks(wave_regions2)
-#
-# wave_resample2 = np.linspace(wave_regions2[0], wave_regions2[-1], 100)
-# linearFLuxCont2 = linesDb.loc[lineLabel, 'n_continuum'] + linesDb.loc[lineLabel, 'm_continuum'] * wave_resample2
-# p1 = linesDb.loc[lineLabel, 'amp':'sigma'].values
-#
-# gauss_resample = gaussFunc((wave_resample2, linearFLuxCont2), *p1)
-#
-# fig, ax = plt.subplots()
-# ax.step(lm.wave, lm.flux, label='spectrum')
-# ax.step(lm.wave[idcsContinua], lm.flux[idcsContinua], label='continuum')
-# ax.step(lm.wave[idcsLinePeak], lm.flux[idcsLinePeak], label='Line')
-# ax.plot(wave_resample2, linearFLuxCont2, label='Continuum fit')
-# ax.plot(wave_resample2, gauss_resample, label='Gaussian fit')
-#
-# ax.legend()
-# ax.update({'xlabel':'Wavelength', 'ylabel':'Flux', 'title':'Gaussian fitting'})
-# plt.show()
-
 
 # Save dataframe to text file
 linesLogAdress = data_folder / data_file.replace('.txt', '_linesLog.txt')

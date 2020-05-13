@@ -380,7 +380,9 @@ class SpectraSynthesizer(MCOutputDisplay):
                     self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
 
             # Specific transition priors
-            tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
+            if 'He1r' not in self.indcsIonLines:
+                self.indcsIonLines['He1r'] = np.zeros(self.region_vector.size, dtype=bool) # TODO nasty trick will need to remake
+            tau = self.set_prior('tau') if 'He1r' in self.obsIons else np.zeros(self.region_vector.size)
 
             # Loop through the lines and compute the synthetic fluxes
             for i in self.linesRangeArray:

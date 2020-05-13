@@ -181,8 +181,8 @@ class LineMeasurer:
                                                         (lineWave, lineContinuumFit),
                                                         lineFluxMatrix[i],
                                                         p0=p0_array,
-                                                        ftol=0.5,
-                                                        xtol=0.5,
+                                                        # ftol=0.5,
+                                                        # xtol=0.5,
                                                         # bounds=paramBounds,
                                                         maxfev=1200)
 
@@ -414,6 +414,7 @@ class LineMeasurer:
 
 
 if __name__ == '__main__':
+
     # Generate fake data
     wave = np.linspace(4950, 5050)
     m, n, noise = 0.0, 2.0, np.random.normal(0, 0.05, wave.size)

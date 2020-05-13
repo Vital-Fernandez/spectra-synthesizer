@@ -5,7 +5,6 @@ import pandas as pd
 from pathlib import Path
 from src.specsyzer.physical_model.line_tools import LineMeasurer, gaussFunc
 from matplotlib import pyplot as plt, rcParams
-from inference_model import displaySimulationData
 
 
 def mixture_density_mult(w, mu, sd, x):
@@ -31,7 +30,6 @@ wave, flux = wave/redshift, flux * 1e-20 * factor
 # cropLimits, noiseLimits = (9032, 9200), (9080, 9120)
 # cropLimits, noiseLimits = (9032, 9300), (9090, 9200)
 cropLimits, noiseLimits = (8400, 9300), (8888, 9000)
-# cropLimits, noiseLimits = (4730, 7350), (5550, 5850)
 
 # Crop the spectrum
 idx = (cropLimits[0] <= wave) & (wave <= cropLimits[1])

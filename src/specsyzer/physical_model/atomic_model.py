@@ -133,9 +133,15 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
         # Defining temperature and density grids
         if (tempGrid is not None) and (denGrid is not None):
-            self.tempGridFlatten, self.denGridFlatten = compute_emissivity_grid(tempGrid, denGrid)
-            self.tempRange = np.linspace(tempGrid[0], tempGrid[1], tempGrid[2])
-            self.denRange = np.linspace(denGrid[0], denGrid[1], denGrid[2])
+            # self.tempGridFlatten, self.denGridFlatten = compute_emissivity_grid(tempGrid, denGrid)
+            # self.tempRange = np.linspace(tempGrid[0], tempGrid[1], tempGrid[2])
+            # self.denRange = np.linspace(denGrid[0], denGrid[1], denGrid[2])
+            self.tempRange = np.linspace(int(tempGrid[0]), int(tempGrid[1]), int(tempGrid[2]))
+            self.denRange = np.linspace(int(denGrid[0]), int(denGrid[1]), int(denGrid[2]))
+            X, Y = np.meshgrid(self.tempRange, self.denRange)
+            self.tempGridFlatten, self.denGridFlatten = X.flatten(), Y.flatten()
+
+
 
     def get_ions_dict(self, ions_list, atomic_references=pn.atomicData.defaultDict):
 
