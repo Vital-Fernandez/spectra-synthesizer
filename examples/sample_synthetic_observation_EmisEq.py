@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import src.specsyzer as ss
+import src.specsiser as ss
 
 # Search for the data in the default user folder
 n_objs = 1
@@ -22,7 +22,7 @@ for idx_obj in range(n_objs):
     objParams = ss.loadConfData(simulationData_file)
 
     # Load emission lines
-    objLinesDF = ss.import_emission_line_data(linesLogAddress, input_lines='all')
+    objLinesDF = ss.import_emission_line_data(linesLogAddress, include_lines='all')
 
     # Declare simulation physical properties
     objRed = ss.ExtinctionModel(Rv=objParams['R_v'],

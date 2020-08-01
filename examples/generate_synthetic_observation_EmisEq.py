@@ -1,13 +1,24 @@
 import os
 import numpy as np
-import src.specsyzer as ss
+import src.specsiser as ss
+
+"""
+This script generates a synthetic spectrum as well as the configuration files so it can be fitted by specsiser models
+
+These files are saved by default in the default user folder according to your operative stytem (see 
+print(os.path.expanduser('~'))
+
+The output files are:
+
+GridEmiss_region1of1_config.txt -> This file details the specsiser fitting using a standard config.ini format
+GridEmiss_region1of1_linesLog.txt -> This file details the emission line fluxes properties in a text table format
+
+"""
 
 # Use the default user folder to store the results
-# user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
-user_folder = 'D:\\AstroModels\\'
+user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
 
-# Declare whether the observation is a single spectrum or
-# multi-spectra
+# Declare whether the observation is a single spectrum or multi-spectra
 n_objs = 1
 
 # Loop through the number of objects and generate a spectrum for each one
@@ -34,18 +45,19 @@ for n_obj in range(n_objs):
 
     # Declare lines to simulate
     input_lines = ['H1_4341A', 'H1_6563A', 'He1_3889A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He1_7065A',
-                                'He2_4686A', 'O2_7319A_b', 'O3_4363A', 'O3_4959A', 'O3_5007A', 'N2_6548A', 'N2_6584A',
-                                'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A', 'Ar4_4740A']
+                    'He2_4686A', 'O2_7319A_b', 'O3_4363A', 'O3_4959A', 'O3_5007A', 'N2_6548A', 'N2_6584A',
+                    'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A', 'Ar4_4740A']
+
     objParams['input_lines'] = input_lines
 
-    # We use the default simulation configuration for the remaining settings
+    # We use the default configuration for the simulation
     objParams.update(ss._default_cfg)
 
-    # We use the default lines database to generate the synthetic emission lines log for this simulation
+    # We use the default lines database to generate the synthetic spectrum
     linesLogPath = os.path.join(ss._literatureDataFolder, ss._default_cfg['lines_data_file'])
 
     # Prepare dataframe with the observed lines labeled
-    objLinesDF = ss.import_emission_line_data(linesLogPath, input_lines=objParams['input_lines'])
+    objLinesDF = ss.import_emission_line_data(linesLogPath, include_lines=objParams['input_lines'])
 
     # Declare extinction properties
     objRed = ss.ExtinctionModel(Rv=objParams['R_v'],
@@ -57,13 +69,17 @@ for n_obj in range(n_objs):
 
     # Establish atomic data references
     ftau_file_path = os.path.join(ss._literatureDataFolder, objParams['ftau_file'])
-    objIons = ss.IonEmissivity(ftau_file_path=ftau_file_path, tempGrid=objParams['temp_grid'], denGrid=objParams['den_grid'])
+    objIons = ss.IonEmissivity(ftau_file_path=ftau_file_path, tempGrid=objParams['temp_grid'],
+                               denGrid=objParams['den_grid'])
 
     # Define the dictionary with the pyneb ion objects
     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
 
     # Compute the emissivity surfaces for the observed emission lines # TODO this database is not necesary since we duplicate the logs
-    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=ss._linesDb)
+    objIons.computeEmissivityEquations(objLinesDF, ionDict, linesDb=ss._linesDb)
+
+    # Fit emissivity grids to a surface
+    objIons.fitEmissivityPlane(objLinesDF)
 
     # Declare the paradigm for the chemical composition measurement
     objChem = ss.DirectMethod()
@@ -73,9 +89,6 @@ for n_obj in range(n_objs):
 
     # We generate an object with the tensor emission functions
     emtt = ss.EmissionTensors()
-
-    # Compile exoplanet interpolator functions so they can be used in numpy
-    emisGridInterpFun = ss.gridInterpolatorFunction(objIons.emisGridDict)
 
     # Array with the equation labels
     eqLabelArray = ss.assignFluxEq2Label(objLinesDF.index.values, objLinesDF.ion.values)
@@ -87,34 +100,33 @@ for n_obj in range(n_objs):
 
     # Compute the emission line fluxes
     lineFluxes = np.empty(len(objLinesDF))
-
     for i in np.arange(len(objLinesDF)):
 
         lineLabel = objLinesDF.iloc[i].name
         lineIon = objLinesDF.iloc[i].ion
         lineFlambda = lineFlambdas[i]
         fluxEq = emtt.emFluxTensors[eqLabelArray[i]]
-        emisInter = emisGridInterpFun[lineLabel]
+        emisCoef = objIons.emisCoeffs[lineLabel]
+        emisEq = objIons.ionEmisEq_fit[lineLabel]
 
         Tlow, Thigh, ne, cHbeta, tau = objParams['true_values']['T_low'], objParams['true_values']['T_high'], \
                                        objParams['true_values']['n_e'], objParams['true_values']['cHbeta'], \
                                        objParams['true_values']['tau']
 
-        emisCoord_low = np.stack(([Tlow], [ne]), axis=-1)
-        emisCoord_high = np.stack(([Thigh], [ne]), axis=-1)
+        lineFluxes[i] = ss.calcEmFluxes_Eq(Tlow, Thigh, ne, cHbeta, tau, abundDict,
+                                        i, lineLabel, lineIon, lineFlambda,
+                                        fluxEq=fluxEq, ftau_coeffs=objIons.ftau_coeffs, emisCoeffs=emisCoef, emis_func=emisEq,
+                                        indcsLabelLines=objChem.indcsLabelLines, He1r_check=objChem.indcsIonLines['He1r'],
+                                        HighTemp_check=objChem.indcsHighTemp)
 
-        lineFluxes[i] = ss.calcEmFluxes_Grid(Tlow, Thigh, ne, emisCoord_low, emisCoord_high,
-                                            cHbeta, tau, abundDict,
-                                            i, lineLabel, lineIon, lineFlambda,
-                                            emisInter, fluxEq, objIons.ftau_coeffs,
-                                            objChem.indcsLabelLines, objChem.indcsIonLines['He1r'], objChem.indcsHighTemp)
+        print('{} {} {}'.format(lineLabel, lineIon, lineFluxes[i]))
 
     # We set the error as a 2% for all the lines and we add the data to the lines log
     objLinesDF.insert(loc=1, column='obsFlux', value=lineFluxes)
     objLinesDF.insert(loc=2, column='obsFluxErr', value=lineFluxes * objParams['lines_minimum_error'])
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
-    synthLinesLogPath = f'{user_folder}GridEmiss_region{n_obj+1}of{n_objs}_linesLog.txt'
+    synthLinesLogPath = f'{user_folder}CoeffsEmiss_region{n_obj+1}of{n_objs}_linesLog.txt'
     print('saving in', synthLinesLogPath)
     with open(synthLinesLogPath, 'w') as f:
         f.write(objLinesDF.to_string(index=True, index_names=False))
@@ -127,5 +139,5 @@ for n_obj in range(n_objs):
     # Include opacite parametrisation file
     objParams['ftau_file'] = os.path.join(ss._literatureDataFolder, objParams['ftau_file'])
 
-    synthConfigPath = f'{user_folder}GridEmiss_region{n_obj+1}of{n_objs}_config.txt'
+    synthConfigPath = f'{user_folder}CoeffsEmiss_region{n_obj+1}of{n_objs}_config.txt'
     ss.safeConfData(synthConfigPath, objParams)

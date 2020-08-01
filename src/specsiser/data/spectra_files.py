@@ -37,6 +37,41 @@ def import_fits_data(file_address, instrument, frame_idx=0):
 
         return wave, cube, header
 
+    elif instrument == 'OSIRIS':
+
+        # Open fits file
+        with astrofits.open(file_address) as hdul:
+            data, header = hdul[frame_idx].data, hdul[frame_idx].header
+
+        assert 'OSIRIS' in header['INSTRUME']
+
+        w_min = header['CRVAL1']
+        dw = header['CD1_1']  # dw (Wavelength interval per pixel)
+        pixels = header['NAXIS1']  # nw number of output pixels
+        w_max = w_min + dw * pixels
+        wave = np.linspace(w_min, w_max, pixels, endpoint=False)
+
+        return wave, data, header
+
+    elif instrument == 'SDSS':
+
+        # Open fits file
+        with astrofits.open(file_address) as hdul:
+            data, header_0, header_2, header_3 = hdul[1].data, hdul[0].header, hdul[2].data, hdul[3].data
+
+        assert 'SDSS 2.5-M' in header_0['TELESCOP']
+
+        wave = 10.0 ** data['loglam']
+        SDSS_z = float(header_2["z"][0] + 1)
+        wave_rest = Wavelength_z = wave / SDSS_z
+
+        flux_norm = data['flux']
+        flux = flux_norm / 1e17
+
+        headers = (header_0, header_2, header_3)
+
+        return wave_rest, flux, headers
+
     else:
 
         print('-- WARNING: Instrument not recognize')

@@ -2,7 +2,7 @@ import os
 import pymc3
 import numpy as np
 import pickle
-import src.specsyzer as ss
+import src.specsiser as ss
 import theano.tensor as tt
 from inference_model import displaySimulationData
 from physical_model.gasEmission_functions import storeValueInTensor
@@ -45,7 +45,7 @@ objParams.update(ss._default_cfg)
 linesLogPath = os.path.join(ss._literatureDataFolder, ss._default_cfg['lines_data_file'])
 
 # Prepare dataframe with the observed lines labeled
-objLinesDF = ss.import_emission_line_data(linesLogPath, input_lines=objParams['input_lines'])
+objLinesDF = ss.import_emission_line_data(linesLogPath, include_lines=objParams['input_lines'])
 
 # Declare extinction properties
 objRed = ss.ExtinctionModel(Rv=objParams['R_v'],

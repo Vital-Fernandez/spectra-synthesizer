@@ -3,8 +3,14 @@ import theano.tensor as tt
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.specsyzer.physical_model.line_tools import LineMeasurer, gaussFunc
+from src.specsiser.physical_model.line_tools import LineMeasurer, gauss_func
 from matplotlib import pyplot as plt, rcParams
+from inference_model import displaySimulationData
+
+
+def mixture_density_single(w, mu, sd, x):
+    logp = tt.log(w) + pm.Normal.dist(mu, sd).logp(x)
+    return tt.exp(logp)
 
 
 def mixture_density_mult(w, mu, sd, x):
@@ -19,7 +25,7 @@ lm = LineMeasurer()
 data_folder, data_file = Path('C:/Users/Vital/OneDrive/Desktop/'), 'test_spec2.txt'
 file_to_open = data_folder / data_file
 linesLogAdress = data_folder / data_file.replace('.txt', '_linesLog.txt')
-linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsyzer/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
+linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsiser/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
 linesDF = lm.load_lineslog(linesLogAdress)
 
 # Load spectrum
@@ -29,7 +35,8 @@ wave, flux = np.loadtxt(file_to_open, unpack=True)
 wave, flux = wave/redshift, flux * 1e-20 * factor
 # cropLimits, noiseLimits = (9032, 9200), (9080, 9120)
 # cropLimits, noiseLimits = (9032, 9300), (9090, 9200)
-cropLimits, noiseLimits = (8400, 9300), (8888, 9000)
+cropLimits, noiseLimits = (8570, 9300), (8888, 9000)
+# cropLimits, noiseLimits = (4000, 9300), (8888, 9000)
 
 # Crop the spectrum
 idx = (cropLimits[0] <= wave) & (wave <= cropLimits[1])
@@ -41,14 +48,13 @@ flux_noContinuum = lm.continuum_remover(noiseWaveLim=noiseLimits)
 continuumFlux = lm.flux - flux_noContinuum
 
 # Plot the spectrum
-lm.spectrum_components(continuumFlux, matchedLinesDF=linesDF, noise_region=noiseLimits)
+lm.plot_spectrum_components(continuumFlux, matchedLinesDF=linesDF, noise_region=noiseLimits)
 
 # Line data:
 idcsDF = (linesDF.wavelength >= lm.wave[0]) & (linesDF.wavelength <= lm.wave[-1])
 lineLabel = linesDF.loc[idcsDF].index.values
 lineWaves = linesDF.loc[idcsDF].wavelength.values
 lineRanges = linesDF.loc[idcsDF, 'w1':'w6'].values
-print(f'- Fitting {lineLabel.size} lines')
 
 indexSpecEmission = np.zeros(lm.wave.size, dtype=bool)
 for i in np.arange(lineLabel.size):
@@ -65,14 +71,14 @@ with pm.Model():
 
     # Model Priors
     amp_array = pm.HalfNormal('amp_array', 10., shape=lineLabel.size)
-    my_array = pm.Normal('mu_array', lineWaves, 2., shape=lineLabel.size)
+    my_array = pm.Normal('mu_array', lineWaves, 5., shape=lineLabel.size)
     sigma_array = pm.HalfCauchy('sigma_array', 5., shape=lineLabel.size)
-    pixelNoise = pm.HalfCauchy('pixelNoise', 5.)
+    pixelNoise = pm.HalfCauchy('eps', 5.)
 
     # Theoretical line profiles
     theoFlux_i = mixture_density_mult(amp_array, my_array, sigma_array, specWave) + specContinuum
 
-    # Model likelihood
+    # Model likelihood # TODO why it is better with one line if it is one?
     pm.Normal('emission_Y', theoFlux_i, pixelNoise, observed=specFlux)
 
     # Run sampler
@@ -81,7 +87,6 @@ with pm.Model():
 # Reconstruct from traces the results
 amp_trace, mu_trace, sigma_trace = trace['amp_array'], trace['mu_array'], trace['sigma_array']
 amp_mean, mu_mean, sigma_mean = amp_trace.mean(axis=0), mu_trace.mean(axis=0), sigma_trace.mean(axis=0)
-print(trace['amp_array'].mean(axis=0))
 
 wave_resample = np.linspace(lm.wave[0], lm.wave[-1], lm.wave.size * 20)
 cont_resample = np.interp(wave_resample, lm.wave, continuumFlux)

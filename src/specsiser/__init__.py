@@ -11,14 +11,14 @@ import configparser
 # Get python version being used
 __python_version__ = sys.version_info
 
-# Get specsyzer setup configuration
+# Get specsiser setup configuration
 _dir_path = os.path.dirname(os.path.realpath(__file__))
 setup_path = os.path.abspath(os.path.join(_dir_path, os.path.join(os.pardir, os.pardir)))
 _setup_cfg = configparser.ConfigParser()
 _setup_cfg.optionxform = str
 _setup_cfg.read(os.path.join(setup_path, 'setup.cfg'))
 
-# Read specsyzer version
+# Read specsiser version
 __version__ = _setup_cfg['metadata']['version']
 
 # Load package libraries
@@ -29,7 +29,7 @@ from .physical_model.chemical_model import DirectMethod, TOIII_TSIII_relation
 from .physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors, assignFluxEq2Label,\
     gridInterpolatorFunction
 from inference_model import SpectraSynthesizer
-from .physical_model.line_tools import LineMeasurer
+from .physical_model.line_tools import LineMeasurer, LineMesurerGUI
 from .data.spectra_files import import_fits_data
 from .print import plot
 

@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import src.specsyzer as ss
+import src.specsiser as ss
 
 # Search for the data in the default user folder
 n_objs = 1
@@ -12,7 +12,9 @@ output_db = f'{fileStructure}s{n_objs}_db'
 # Declare sampler
 obj1_model = ss.SpectraSynthesizer()
 
-excludeLines = 'all' #np.array(['He1_4471A', 'He2_4686A', 'He1_5876A', 'He1_7065A', 'He1_6678A', 'Ar4_4740A', 'Ar3_7136A', 'N2_6584A', 'N2_6548A'])
+excludeLines = np.array(['H1_4341A', 'O3_4363A', 'Ar4_4740A', 'O3_4959A', 'O3_5007A', 'S3_6312A', 'N2_6548A', 'H1_6563A',
+       'N2_6584A', 'S2_6716A', 'S2_6731A', 'Ar3_7136A', 'S3_9069A', 'S3_9531A'])
+        #np.array(['He1_4471A', 'He2_4686A', 'He1_5876A', 'He1_7065A', 'He1_6678A', 'Ar4_4740A', 'Ar3_7136A', 'N2_6584A', 'N2_6548A'])
 
 # Loop through the number of regions
 for idx_obj in range(n_objs):
@@ -25,7 +27,7 @@ for idx_obj in range(n_objs):
     objParams = ss.loadConfData(simulationData_file)
 
     # Load emission lines
-    objLinesDF = ss.import_emission_line_data(linesLogAddress, input_lines=excludeLines)
+    objLinesDF = ss.import_emission_line_data(linesLogAddress, include_lines=excludeLines)
 
     # Declare simulation physical properties
     objRed = ss.ExtinctionModel(Rv=objParams['R_v'],
@@ -41,8 +43,7 @@ for idx_obj in range(n_objs):
     objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=ss._linesDb)
 
     # Declare chemical model
-    objChem = ss.DirectMethod(linesDF=objLinesDF,
-                              highTempIons=objParams['high_temp_ions_list'])
+    objChem = ss.DirectMethod(linesDF=objLinesDF, highTempIons=objParams['high_temp_ions_list'])
 
     # Declare region physical model
     obj1_model.define_region(objLinesDF, objIons, objRed, objChem, n_region=idx_obj)

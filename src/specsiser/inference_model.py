@@ -50,8 +50,6 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.region_data = {}
         self.region_vector = np.array([], dtype=int)
 
-        self.pymc3Dist = {'Normal': pymc3.Normal, 'Lognormal': pymc3.Lognormal}
-
     def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region=0, minErr=None, verbose=True):
 
         ext_region = f'_{n_region}'
@@ -79,7 +77,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.total_regions += 1
         self.region_vector = np.append(self.region_vector, np.ones(n_lines, dtype=int) * n_region)
 
-    def set_simulation_variables(self, minErr = None, verbose = True):
+    def set_simulation_variables(self, minErr=None, verbose=True):
 
         param_list = ['lineLabels', 'lineIons', 'emissionFluxes', 'emissionErr', 'lineFlambda', 'lineFlambda',
                       'highTemp_check', 'obsIons']
@@ -236,67 +234,23 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
-    def set_prior(self, param, abund = False, name_param=None):
+    def set_prior(self, param, abund=False, name_param=None):
+
         probDist = getattr(pymc3, self.priorDict[param][0])
+
         if abund:
-            return probDist(name_param, self.priorDict[param][1], self.priorDict[param][2]) * self.priorDict[param][3]
+            priorFunc = probDist(name_param, self.priorDict[param][1], self.priorDict[param][2]) \
+                        * self.priorDict[param][3] + self.priorDict[param][4]
+
+        elif probDist.__name__ in ['HalfCauchy']:  # These distributions only have one parameter
+            priorFunc = probDist(param, self.priorDict[param][1], shape=self.total_regions) \
+                        * self.priorDict[param][3] + self.priorDict[param][4]
+
         else:
-            return probDist(param, self.priorDict[param][1], self.priorDict[param][2], shape=self.total_regions) * self.priorDict[param][3]
+            priorFunc = probDist(param, self.priorDict[param][1], self.priorDict[param][2], shape=self.total_regions) \
+                        * self.priorDict[param][3] + self.priorDict[param][4]
 
-    def inference_model_emission(self, include_reddening=True, include_Thigh_prior=True):
-
-        # Container to store the synthetic line fluxes
-        fluxTensor = tt.zeros(self.lineLabels.size)
-
-        with pymc3.Model() as self.inferenModel:
-
-            # Gas priors
-            n_e = self.set_prior('n_e')
-            T_low = self.set_prior('T_low')
-            cHbeta = self.set_prior('cHbeta')  # TODO add the a mechanism to preload a reddening
-            T_high = self.set_prior('T_high') if include_Thigh_prior else TOIII_TSIII_relation(T_low)
-
-            # Abundance priors
-            abund_dict = {'H1r': 1.0}
-            for ion in self.obsIons:
-                if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
-                    abund_dict[ion] = self.set_prior(ion)
-
-            # Specific transition priors
-            tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
-
-            # Loop through the lines and compute the synthetic fluxes
-            for i in self.linesRangeArray:
-                lineLabel = self.lineLabels[i]
-                lineIon = self.lineIons[i]
-                lineFlambda = self.lineFlambda[i]
-                fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
-                emisCoef = self.emisCoef[lineLabel]
-                emisEq = self.emisEq[lineLabel]
-
-                lineFlux_i = calcEmFluxes(T_low, T_high, n_e, cHbeta, tau, abund_dict,
-                                          i, lineLabel, lineIon, lineFlambda,
-                                          fluxEq=fluxEq,
-                                          ftau_coeffs=self.ftauCoef,
-                                          emisCoeffs=emisCoef,
-                                          emis_func=emisEq,
-                                          indcsLabelLines=self.indcsLabelLines,
-                                          He1r_check=self.indcsIonLines['He1r'],
-                                          HighTemp_check=self.highTemp_check)
-
-                # Assign the new value in the tensor
-                fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
-
-            # Store computed fluxes
-            pymc3.Deterministic('calcFluxes_Op', fluxTensor)
-
-            # Likelihood gas components
-            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.emissionErr, observed=self.emissionFluxes)
-
-            # Display simulation data
-            displaySimulationData(self.inferenModel)
-
-        return
+        return priorFunc
 
     def inference_emisEq_model(self, include_reddening=True, include_Thigh_prior=True):
 
@@ -362,6 +316,9 @@ class SpectraSynthesizer(MCOutputDisplay):
         # Container to store the synthetic line fluxes
         fluxTensor = tt.zeros(self.lineLabels.size)
 
+        self.logFlux = np.log10(self.emissionFluxes)
+        self.logFluxErr = np.log10(1 + self.emissionErr/self.emissionFluxes)
+
         with pymc3.Model() as self.inferenModel:
 
             # Gas priors
@@ -370,7 +327,8 @@ class SpectraSynthesizer(MCOutputDisplay):
             cHbeta = self.set_prior('cHbeta')  # TODO add the a mechanism to preload a reddening
             T_high = self.set_prior('T_high') if include_Thigh_prior else TOIII_TSIII_relation(T_low)
 
-            emisCoord_low = tt.stack([[T_low[0]], [n_e[0]]],axis=-1)  # TODO very inefficient for multiple regions?
+            # TODO very inefficient for multiple regions?
+            emisCoord_low = tt.stack([[T_low[0]], [n_e[0]]], axis=-1)
             emisCoord_high = tt.stack([[T_high[0]], [n_e[0]]], axis=-1)
 
             # Abundance priors
@@ -384,6 +342,9 @@ class SpectraSynthesizer(MCOutputDisplay):
                 self.indcsIonLines['He1r'] = np.zeros(self.region_vector.size, dtype=bool) # TODO nasty trick will need to remake
             tau = self.set_prior('tau') if 'He1r' in self.obsIons else np.zeros(self.region_vector.size)
 
+            if 'O2_7319A_b' not in self.indcsLabelLines:
+                self.indcsLabelLines['O2_7319A_b'] = np.zeros(self.region_vector.size, dtype=bool)
+
             # Loop through the lines and compute the synthetic fluxes
             for i in self.linesRangeArray:
                 i_region = self.region_vector[i]
@@ -393,9 +354,6 @@ class SpectraSynthesizer(MCOutputDisplay):
                 lineFlambda = self.lineFlambda[i]
                 fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
                 emisInter = self.emisGridDict[lineLabel]
-
-                # emisCoord_low = tt.stack([[T_low[i_region]], [n_e[i_region]]], axis=-1) # TODO very inefficient for multiple regions?
-                # emisCoord_high = tt.stack([[T_high[i_region]], [n_e[i_region]]], axis=-1)
 
                 lineFlux_i = calcEmFluxes_Grid(T_low[i_region], T_high[i_region], n_e[i_region], emisCoord_low, emisCoord_high,
                                                      cHbeta[i_region], tau[i_region], self.abund_dict,
@@ -412,7 +370,7 @@ class SpectraSynthesizer(MCOutputDisplay):
             pymc3.Deterministic('calcFluxes_Op', fluxTensor)
 
             # Likelihood gas components
-            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.emissionErr, observed=self.emissionFluxes)
+            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.logFluxErr, observed=self.logFlux)
 
             # Display simulation data
             displaySimulationData(self.inferenModel)
@@ -484,9 +442,8 @@ class SpectraSynthesizer(MCOutputDisplay):
         print('\n- Launching sampler')
         trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel)
 
-        #Adapt the database to the prior configuration
+        # Adapt the database to the prior configuration
         model_param = np.array(trace.varnames)
-        prior_param = self.priorDict.keys()
 
         for idx in range(model_param.size):
 
@@ -498,9 +455,14 @@ class SpectraSynthesizer(MCOutputDisplay):
                 ext_region = f'_{region}'
                 ref_name = ref_name.replace(ext_region, '')
 
-            if ref_name in prior_param:
-                reparam0 = self.priorDict[ref_name][3]
-                trace.add_values({param:trace[param] * reparam0}, overwrite=True)
+            # Apply the parametrisation
+            if ref_name in self.priorDict:
+                reparam0, reparam1 = self.priorDict[ref_name][3], self.priorDict[ref_name][4]
+                trace.add_values({param: trace[param] * reparam0 + reparam1}, overwrite=True)
+
+            # Fluxes parametrisation
+            if param == 'calcFluxes_Op':
+                trace.add_values({param: np.power(10, trace[param])}, overwrite=True)
 
         # Save the database
         with open(db_location, 'wb') as trace_pickle:
@@ -519,8 +481,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         store_params = {}
         for parameter in trace.varnames:
             if ('_log__' not in parameter) and ('interval' not in parameter):
-                trace_norm = self.priorDict[parameter][3] if parameter in self.priorDict else 1.0
-                trace_i = trace_norm * trace[parameter]
+                trace_i = trace[parameter]
                 store_params[parameter] = [trace_i.mean(axis=0), trace_i.std(axis=0)]
 
         # Save results summary to configuration file

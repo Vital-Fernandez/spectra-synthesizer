@@ -1097,6 +1097,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
                     perDif = str(np.round((1 - (true_value / median)) * 100, 2))
 
+
                 self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
                                  last_row=False if parameters_list[-1] != param else True)
 

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import astropy.io.fits as astrofits
 from pathlib import Path
-from src.specsyzer.physical_model.line_tools import LineMeasurer, gaussFunc
+from src.specsiser.physical_model.line_tools import LineMeasurer, gauss_func
 from matplotlib import pyplot as plt, rcParams
 from inference_model import displaySimulationData
 
@@ -42,7 +42,7 @@ lm = LineMeasurer()
 # Declare data
 data_folder, data_file = Path('D:/Dropbox/Astrophysics/Data/WHT-Ricardo/'), 'COMBINED_blue.0001.fits'
 file_to_open = data_folder / data_file
-linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsyzer/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
+linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsiser/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
 linesDF = pd.read_excel(linesFile, sheet_name=0, header=0, index_col=0)
 
 # Load spectrum
@@ -65,7 +65,7 @@ flux_noContinuum = lm.continuum_remover(noiseWaveLim=noiseLimits, order=1)
 continuumFlux = lm.flux - flux_noContinuum
 
 # Plot the spectrum
-lm.spectrum_components(continuumFlux, matchedLinesDF=linesDF, noise_region=noiseLimits)
+lm.plot_spectrum_components(continuumFlux, matchedLinesDF=linesDF, noise_region=noiseLimits)
 
 # Define input spectrum
 lineLabels = np.array(['O2_3726A', 'O2_3729A'])

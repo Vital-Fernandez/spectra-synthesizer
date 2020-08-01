@@ -69,6 +69,78 @@ def silent_remove(filename_list):
                 raise  # re-raise exception if a different error occurred
 
 
+# Function to map a string to its variable-type
+def formatStringEntry(entry_value, key_label, section_label='', float_format=None, nan_format='nan'):
+
+    output_variable = None
+
+    # None variable
+    if (entry_value == 'None') or (entry_value is None):
+        output_variable = None
+
+    # Dictionary blended lines
+    elif '_blended_lines' in section_label:
+        output_variable = {}
+        keys_and_values = entry_value.split(',')
+        for pair in keys_and_values:
+            key, value = pair.split(':')
+            if value == 'None':
+                output_variable[key] = None
+            elif key in ['value', 'min', 'max']:
+                output_variable[key] = float(value)
+            elif key == 'vary':
+                output_variable[key] = strtobool(value) == 1
+            else:
+                output_variable[key] = value
+
+    # Arrays (The last boolean overrides the parameters # TODO unstable in case of one item lists
+    elif ',' in entry_value:
+
+        # Specia cases conversion
+        if key_label == 'input_lines':
+            if entry_value == 'all':
+                output_variable = 'all'
+            else:
+                output_variable = np.array(entry_value.split(','))
+
+        elif '_array' in key_label:
+            output_variable = np.fromstring(entry_value, dtype=np.float, sep=',')
+
+        elif '_prior' in key_label:
+            entry_value = entry_value.split(',')
+            output_variable = np.array([float(entry_value[i]) if i > 0 else
+                                        entry_value[i] for i in range(len(entry_value))], dtype=object)
+
+        # List of strings
+        elif '_list' in key_label:
+            output_variable = np.array(entry_value.split(','))
+
+        # Objects arrays
+        else:
+            newArray = []
+            textArrays = entry_value.split(',')
+            for item in textArrays:
+                convertValue = float(item) if item != 'None' else np.nan
+                newArray.append(convertValue)
+            output_variable = np.array(newArray)
+
+    # Boolean
+    elif '_check' in key_label:
+        output_variable = strtobool(entry_value) == 1
+
+    # Floats
+    elif (key_label not in STRINGCONFKEYS) and ('_folder' not in key_label) and ('_file' not in key_label) and \
+            ('_list' not in key_label) and ('_b_components' not in key_label):
+
+        output_variable = float(entry_value)
+
+    # Strings
+    else:
+        output_variable = entry_value
+
+    return output_variable
+
+
 # Function to map variables to strings
 def formatConfEntry(entry_value, float_format=None, nan_format='nan'):
 
@@ -123,70 +195,37 @@ def check_missing_flux_values(flux):
 
 
 # Function to import SpecSyzer configuration file #TODO repeated
-def loadConfData(filepath, objName=None):
+def loadConfData(filepath, objName=None, group_variables=True):
 
     # Open the file
     cfg = importConfigFile(filepath)
 
-    # Read conversion settings # TODO exclude this metadata from file
-    string_parameter = cfg['conf_entries']['string_conf'].split(',')
+    if group_variables:
 
-    # Loop through configuration file sections and merge into a dictionary
-    confDict = {}
-    for i in range(1, len(cfg.sections())):
-        section = cfg.sections()[i]
-        for option in cfg.options(section):
-            confDict[option] = cfg[section][option]
+        # Read conversion settings # TODO exclude this metadata from file
+        string_parameter = cfg['conf_entries']['string_conf'].split(',')
 
-    # TODO add mechanic to read the many objects are results
-    # TODO make confDict[key] a variable
-    # Convert the entries to the right format # TODO Add security warnings for wrong data
-    for key in confDict.keys():
+        # Loop through configuration file sections and merge into a dictionary
+        confDict = {}
+        for i in range(1, len(cfg.sections())):
+            section = cfg.sections()[i]
+            for option in cfg.options(section):
+                confDict[option] = cfg[section][option]
 
-        value = confDict[key]
+        # Convert the entries to the right format
+        for key, value in confDict.items():
+            confDict[key] = formatStringEntry(value, key)
 
-        # Empty variable
-        if value == '':
-            confDict[key] = None
+    else:
+        # Loop through configuration file sections and merge into a dictionary
+        confDict = {}
 
-        # None variable
-        elif (value == 'None') or (value is None):
-            confDict[key] = None
-
-        # Arrays (The last boolean overrides the parameters # TODO unstable in case of one item lists
-        elif ',' in value:
-
-            # Specia cases conversion
-            if key == 'input_lines':
-                if value == 'all':
-                    confDict[key] = 'all'
-                else:
-                    confDict[key] = np.array(confDict[key].split(','))
-
-            elif '_prior' in key:
-                value = value.split(',')
-                confDict[key] = np.array([float(value[i]) if i > 0 else value[i] for i in range(len(value))], dtype=object) # TODO this one should read as an array
-
-            # List of strings
-            elif '_list' in key:
-                    confDict[key] = np.array(confDict[key].split(','))
-
-            # Objects arrays
-            else:
-                newArray = []
-                textArrays = value.split(',')
-                for item in textArrays:
-                    convertValue = float(item) if item != 'None' else np.nan
-                    newArray.append(convertValue)
-                confDict[key] = np.array(newArray)
-
-        # Boolean
-        elif '_check' in key:
-            confDict[key] = strtobool(confDict[key]) == 1
-
-        # Remaining are either strings or floats
-        elif (key not in STRINGCONFKEYS) and ('_folder' not in key) and ('_file' not in key) and ('_list' not in key):
-            confDict[key] = float(value)
+        # Loop through configuration file sections and merge into a dictionary
+        for section in cfg.sections():
+            confDict[section] = {}
+            for option_key in cfg.options(section):
+                option_value = cfg[section][option_key]
+                confDict[section][option_key] = formatStringEntry(option_value, option_key, section)
 
     return confDict
 
@@ -453,14 +492,40 @@ def generate_object_mask(linesDf, wavelength, linelabels):
 
 
 # Function to label the lines provided by the user
-def import_emission_line_data(linesLogAddress, linesDb = None, input_lines='all'):
+def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None, exclude_lines=None):
 
-    # Output DF # TODO we need a better mechanic to discremeate
+    """
+    Read emission line fluxes table
+
+    This function imports the line fluxes from a specsiser text file format and returns a pandas dataframe.
+
+    The user can provide an auxiliariary dataframe with the theoretical information on the lines. Otherwise, the code
+    default database will be used. Lines not included in the databse will still be imported but without
+    the sumplementary information (ion, theoretical wavelength, pyneb reference, latex label...)
+
+    The user can specify the lines to include or exclude (the latter take preference if the same line is included in
+    both lists). Otherwise all the lines in the input files will be added be included.
+
+    :param string linesLogAddress: Address of lines log. A succesful import requires a specsiser log format.
+    :param pd.DataFrame linesDb: Dataframe with theoretical data on the lines log file. If None, the default database
+    will supply the used to supply the missing data
+    :param list include_lines: Array of line labels to be imported. If None, all the lines in the file will be considered
+    :param list exclude_lines: Array of line labels not to be imported. If None, all the lines in the file will be considered.
+    :return: Dataframe with the line data from the specified lines log file compared against the theoretical database.
+    :rtype: pd.DataFrame
+    """
+
+    # Output DF # TODO we need to replace for a open excel format
     try:
         outputDF = pd.read_excel(linesLogAddress, sheet_name=0, header=0, index_col=0)
 
     except:
         outputDF = pd.read_csv(linesLogAddress, delim_whitespace=True, header=0, index_col=0)
+
+    # Trim with include lines
+    if include_lines is not None:
+        idx_includeLines = ~(outputDF.index.isin(include_lines))
+        outputDF.drop(index=outputDF.loc[idx_includeLines].index.values, inplace=True)
 
     if linesDb is None:
         cfg = importConfigFile(CONFIGPATH)
@@ -489,10 +554,9 @@ def import_emission_line_data(linesLogAddress, linesDb = None, input_lines='all'
     outputDF['latexLabel'] = linesDb.loc[idx_obj_lines].latexLabel
     outputDF['blended'] = linesDb.loc[idx_obj_lines].blended
 
-    # Remove non desired lines  TODO add check of possible lines w.r.t spectrum
-    # TODO maybe better to exclude than include
-    if input_lines is not 'all':
-        idx_excludedLines = ~(outputDF.index.isin(input_lines))
+    # Trim with exclude lines
+    if exclude_lines is not None:
+        idx_excludedLines = outputDF.index.isin(exclude_lines)
         outputDF.drop(index=outputDF.loc[idx_excludedLines].index.values, inplace=True)
 
     return outputDF
@@ -535,13 +599,12 @@ def load_MC_fitting(db_address, return_dictionary=True, normConstants=None):
     else:
         model_reference, trace = db['model'], db['trace']
 
-        traces_dict = {}
+        traces_dict = {} # TODO this is useless now traces are stored corrected
         for parameter in trace.varnames:
             if ('_log__' not in parameter) and ('interval' not in parameter):
                 prior_key = parameter + '_prior'
                 if normConstants is not None:
-                    trace_norm = normConstants[prior_key][3] if prior_key in normConstants else 1.0
-                    trace_i = trace_norm * trace[parameter]
+                    trace_i = trace[parameter]
                 else:
                     trace_i = trace[parameter]
                 traces_dict[parameter] = trace_i

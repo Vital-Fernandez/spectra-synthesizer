@@ -116,32 +116,31 @@ class EmissivitySurfaceFitter():
 
 class IonEmissivity(EmissivitySurfaceFitter):
 
-    def __init__(self, atomic_references=None, ftau_file_path=None, tempGrid=None, denGrid=None):
+    def __init__(self, atomic_references=None, tempGrid=None, denGrid=None):
 
+        self.emisGridDict = {}
         self.ftau_coeffs = None
+        self.ftau_interp = {}
+        self.tempRange = None
+        self.denRange = None
+        self.tempGridFlatten = None
+        self.denGridFlatten = None
 
         EmissivitySurfaceFitter.__init__(self)
 
-        # Load user atomic data references # TODO upgrade the right method? # CHECK for pyneb abundances
-        if atomic_references is not None:
-            pn.atomicData.defaultDict = atomic_references
-            pn.atomicData.resetDataFileDict()
-
-        # Import Optical depth function coefficients
-        if ftau_file_path is not None:
-            self.ftau_coeffs = import_optical_depth_coeff_table(ftau_file_path)
-
         # Defining temperature and density grids
+        # FIXME There is a weird error in linspace, check if int(denGrid[0]) can be removed
         if (tempGrid is not None) and (denGrid is not None):
-            # self.tempGridFlatten, self.denGridFlatten = compute_emissivity_grid(tempGrid, denGrid)
-            # self.tempRange = np.linspace(tempGrid[0], tempGrid[1], tempGrid[2])
-            # self.denRange = np.linspace(denGrid[0], denGrid[1], denGrid[2])
             self.tempRange = np.linspace(int(tempGrid[0]), int(tempGrid[1]), int(tempGrid[2]))
             self.denRange = np.linspace(int(denGrid[0]), int(denGrid[1]), int(denGrid[2]))
             X, Y = np.meshgrid(self.tempRange, self.denRange)
             self.tempGridFlatten, self.denGridFlatten = X.flatten(), Y.flatten()
 
-
+        # Load user atomic data references
+        # TODO upgrade the right method? check for pyneb abundances
+        if atomic_references is not None:
+            pn.atomicData.defaultDict = atomic_references
+            pn.atomicData.resetDataFileDict()
 
     def get_ions_dict(self, ions_list, atomic_references=pn.atomicData.defaultDict):
 
@@ -185,7 +184,6 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
             # Line emissivity references
             line_label = labels_list[i]
-
             if (grids_folder is not None) and load_grids:
                 emis_grid_i = np.load(grids_folder, line_label)
 
@@ -195,10 +193,10 @@ class IonEmissivity(EmissivitySurfaceFitter):
                 # Check if it is a blended line:
                 if '_b' not in line_label:
                     # TODO I should change wave by label
-                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange,
-                                                                      wave=pynebCode_list[i])
+                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=pynebCode_list[i])
 
                 else:
+                    # TODO in here we need to add the global database to read the components... use theoretical database.
                     emis_grid_i = np.zeros(Hbeta_emis_grid.shape)
                     for component in blended_list[i].split(','):
                         component_wave = linesDb.loc[component].pynebCode
@@ -209,8 +207,45 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
             # Save along the number of points
             emis_grid_i_norm = np.log10(emis_grid_i / Hbeta_emis_grid)
-            emis_grid_i_interp = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange], emis_grid_i_norm[:, :, None], nout=1)
+            emis_grid_i_interp = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
+                                                                   emis_grid_i_norm[:, :, None], nout=1)
             self.emisGridDict[line_label] = emis_grid_i_interp.evaluate
+
+        return
+
+    def compute_ftau_grids(self, ftau_file_path):
+
+        """
+        Correction grids for fluorescence excitation in HeI transitions
+
+        :math:`a^2`
+
+        :math:`\\alpha > \\beta`
+
+
+        :param ftau_file_path:
+        :return:
+        """
+
+        # TODO add default path
+
+        # Import Optical depth function coefficients
+        self.ftau_coeffs = import_optical_depth_coeff_table(ftau_file_path)
+
+        den_matrix, temp_matrix = np.meshgrid(self.denRange, self.tempRange)
+
+        # ftau grid
+        for lineLabel in self.ftau_coeffs:
+            if self.ftau_coeffs[lineLabel].sum() != 0.0:
+
+                # TODO check equation format for log scale
+                a, b, c, d = self.ftau_coeffs[lineLabel]
+                ftau_grid = (a + (b + c * den_matrix + d * np.power(temp_matrix, 2)) * temp_matrix / 10000.0)
+
+                ftau_interpolator = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
+                                                                        ftau_grid[:, :, None], nout=1)
+
+                self.ftau_interp[lineLabel] = ftau_interpolator.evaluate
 
         return
 
@@ -226,7 +261,6 @@ class IonEmissivity(EmissivitySurfaceFitter):
         Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempGridFlatten, self.denGridFlatten, wave=norm_pynebCode,
                                                           product=False)
 
-        self.emisGridDict = {}
         for i in range(len(labels_list)):
 
             # Line emissivity references
