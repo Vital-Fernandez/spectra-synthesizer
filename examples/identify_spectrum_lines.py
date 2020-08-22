@@ -48,7 +48,7 @@ for i in np.arange(obsLines.size):
     lm.line_properties(idcsLinePeak, idcsContinua, bootstrap_size=500)
 
     # Perform gaussian fitting
-    lm.line_fitting(idcsLinePeak, idcsContinua, bootstrap_size=500)
+    lm.gaussian_mcfit(idcsLinePeak, idcsContinua, bootstrap_size=500)
 
     # Store results in database
     lm.results_to_database(lineLabel, linesDb)

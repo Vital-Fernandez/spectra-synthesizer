@@ -83,15 +83,22 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
         output_variable = {}
         keys_and_values = entry_value.split(',')
         for pair in keys_and_values:
-            key, value = pair.split(':')
-            if value == 'None':
-                output_variable[key] = None
-            elif key in ['value', 'min', 'max']:
-                output_variable[key] = float(value)
-            elif key == 'vary':
-                output_variable[key] = strtobool(value) == 1
+
+            # Conversion for parameter class atributes
+            if ':' in pair:
+                key, value = pair.split(':')
+                if value == 'None':
+                    output_variable[key] = None
+                elif key in ['value', 'min', 'max']:
+                    output_variable[key] = float(value)
+                elif key == 'vary':
+                    output_variable[key] = strtobool(value) == 1
+                else:
+                    output_variable[key] = value
+
+            # Conversion for non-parameter class atributes (only str conversion possible)
             else:
-                output_variable[key] = value
+                output_variable = entry_value
 
     # Arrays (The last boolean overrides the parameters # TODO unstable in case of one item lists
     elif ',' in entry_value:
@@ -130,7 +137,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
 
     # Floats
     elif (key_label not in STRINGCONFKEYS) and ('_folder' not in key_label) and ('_file' not in key_label) and \
-            ('_list' not in key_label) and ('_b_components' not in key_label):
+            ('_list' not in key_label) and ('_b_components' not in key_label) and section_label not in ['blended_groups']:
 
         output_variable = float(entry_value)
 

@@ -27,7 +27,7 @@ from .physical_model.extinction_model import ExtinctionModel
 from .physical_model.atomic_model import IonEmissivity, compute_emissivity_grid
 from .physical_model.chemical_model import DirectMethod, TOIII_TSIII_relation
 from .physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors, assignFluxEq2Label,\
-    gridInterpolatorFunction
+    gridInterpolatorFunction, EmissionFluxModel
 from inference_model import SpectraSynthesizer
 from .physical_model.line_tools import LineMeasurer, LineMesurerGUI
 from .data.spectra_files import import_fits_data

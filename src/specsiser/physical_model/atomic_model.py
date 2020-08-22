@@ -16,7 +16,7 @@ def compute_emissivity_grid(tempGrid, denGrid):
     return tempGridFlatten, denGridFlatten
 
 
-class EmissivitySurfaceFitter():
+class EmissivitySurfaceFitter:
 
     def __init__(self):
 
@@ -168,7 +168,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
         return
 
     def computeEmissivityGrids(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r',
-                              norm_pynebCode=4861, linesDb=None):
+                              norm_pynebCode=4861, linesDb=None, combined_dict={}):
 
         labels_list = linesDF.index.values
         ions_list = linesDF.ion.values
@@ -190,26 +190,29 @@ class IonEmissivity(EmissivitySurfaceFitter):
             # Otherwise generate it (and save it)
             else:
 
-                # Check if it is a blended line:
-                if '_b' not in line_label:
+                # Single line:
+                if ('_b' not in line_label) and (line_label not in combined_dict):
                     # TODO I should change wave by label
                     emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=pynebCode_list[i])
 
+                # Blended line
                 else:
                     # TODO in here we need to add the global database to read the components... use theoretical database.
                     emis_grid_i = np.zeros(Hbeta_emis_grid.shape)
-                    for component in blended_list[i].split(','):
+                    for component in combined_dict[line_label].split('-'):
                         component_wave = linesDb.loc[component].pynebCode
                         emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange,
                                                                            wave=component_wave)
                 if grids_folder is not None:
                     np.save(grids_folder, emis_grid_i)
 
-            # Save along the number of points
-            emis_grid_i_norm = np.log10(emis_grid_i / Hbeta_emis_grid)
-            emis_grid_i_interp = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
-                                                                   emis_grid_i_norm[:, :, None], nout=1)
-            self.emisGridDict[line_label] = emis_grid_i_interp.evaluate
+            # Save grid dict
+            self.emisGridDict[line_label] = np.log10(emis_grid_i / Hbeta_emis_grid)
+
+            # emis_grid_i_norm = np.log10(emis_grid_i / Hbeta_emis_grid)
+            # emis_grid_i_interp = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
+            #                                                        emis_grid_i_norm[:, :, None], nout=1)
+            # self.emisGridDict[line_label] = emis_grid_i_interp.evaluate
 
         return
 

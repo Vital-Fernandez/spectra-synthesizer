@@ -63,7 +63,7 @@ def import_fits_data(file_address, instrument, frame_idx=0):
 
         wave = 10.0 ** data['loglam']
         SDSS_z = float(header_2["z"][0] + 1)
-        wave_rest = Wavelength_z = wave / SDSS_z
+        wave_rest = wave / SDSS_z
 
         flux_norm = data['flux']
         flux = flux_norm / 1e17

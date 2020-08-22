@@ -7,14 +7,14 @@ from data_reading import parseConfDict
 from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_TSIII_relation
-from physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors, assignFluxEq2Label
+from physical_model.gasEmission_functions import calcEmFluxes_Eq, calcEmFluxes_Grid, EmissionTensors,\
+    assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
 
 # Disable compute_test_value in theano zeros tensor
 theano.config.compute_test_value = "ignore"
 
 
 def displaySimulationData(model):
-
     # Check test_values are finite
     print('\n-- Test points:')
     model_var = model.test_point
@@ -37,6 +37,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         self.modelParameters = None
         self.priorDict = {}  # TODO This one must include the different coordinates
+        self.paramDict = {}
 
         self.emissionFluxes = None
         self.emissionErr = None
@@ -50,7 +51,8 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.region_data = {}
         self.region_vector = np.array([], dtype=int)
 
-    def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region=0, minErr=None, verbose=True):
+    def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region=0, minErr=None,
+                      verbose=True):
 
         ext_region = f'_{n_region}'
         n_lines = objLinesDF.index.size
@@ -76,6 +78,12 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         self.total_regions += 1
         self.region_vector = np.append(self.region_vector, np.ones(n_lines, dtype=int) * n_region)
+
+        # TODO this should update for different regions
+        # Compile exoplanet interpolator functions so they can be used wit numpy
+        self.emisGridInterpFun = gridInterpolatorFunction(ion_model.emisGridDict, ion_model.tempRange, ion_model.denRange)
+
+        return
 
     def set_simulation_variables(self, minErr=None, verbose=True):
 
@@ -125,18 +133,15 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         # Determine the line indeces
         # This dictionary of lines has a boolean indexing of the lines belonging to it
-        self.indcsLabelLines = {} # TODO in here we are just overwritting
+        self.indcsLabelLines = {}  # TODO in here we are just overwritting
         for line in np.unique(self.lineLabels):
             self.indcsLabelLines[line] = (self.lineLabels == line)
 
         # Determine the lines belonging to observed ions
         # This dictionary of ions has a boolean indexing of the lines belonging to it
-        self.indcsIonLines = {} # TODO in here should I use local?
+        self.indcsIonLines = {}  # TODO in here should I use local?
         for ion in np.unique(self.lineIons):
             self.indcsIonLines[ion] = (self.lineIons == ion)
-
-        # Load flux tensors
-        self.emtt = EmissionTensors()
 
         # Dictionary with simulation abundances
         self.abund_dict = {}
@@ -148,73 +153,32 @@ class SpectraSynthesizer(MCOutputDisplay):
         if minErr is not None:
             err_fraction = self.emissionErr / self.emissionFluxes
             idcs_smallErr = err_fraction < minErr
-            self.emissionFluxes = minErr * self.obsLineFluxes[idcs_smallErr]
+            print('EEEEEEEEEEEEEEEEEEEEEOOOOOOOOOOOOOOOOOOOOOO')
+            print('Antes', self.emissionErr)
+            self.emissionErr[idcs_smallErr] = minErr * self.emissionFluxes[idcs_smallErr]
+            print('Despues', self.emissionErr)
+
+
+        # Load flux tensors
+        self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
 
         if verbose:
             print(f'\n- Input lines ({self.lineLabels.size})')
             for i in range(self.lineLabels.size):
                 lineReference = f'-- {self.lineLabels[i]} ({self.lineIons[i]}) '
-                lineFlux = ' flux = {:.3f} +/- {:.3f} || err % = {:.3f}'.format(self.emissionFluxes[i], self.emissionErr[i],
-                                                                                self.emissionErr[i] / self.emissionFluxes[i])
-                print(lineReference + lineFlux)
-
-        return
-
-    def declare_model_data(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region, minErr=None, verbose=True):
-
-        self.emissionCheck = True
-
-        self.lineLabels = objLinesDF.index.values
-        self.lineIons = objLinesDF.ion.values
-        self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.obsWave.values)
-        self.linesRangeArray = np.arange(self.lineLabels.size)
-
-        self.emissionFluxes = objLinesDF.obsFlux.values
-        self.emissionErr = objLinesDF.obsFluxErr.values
-
-        self.emisCoef = ion_model.emisCoeffs
-        self.emisEq = ion_model.ionEmisEq_fit
-        self.emisGridInterp = ion_model.emisGridInterp
-
-        self.emtt = EmissionTensors()
-        self.eqLabelArray = assignFluxEq2Label(self.lineLabels, self.lineIons)
-        self.ftauCoef = ion_model.ftau_coeffs
-
-        self.indcsLabelLines = chemistry_model.indcsLabelLines
-        self.indcsIonLines = chemistry_model.indcsIonLines
-        self.highTemp_check = chemistry_model.indcsHighTemp
-        self.obsIons = chemistry_model.obsAtoms
-
-        # Establish minimum error on lines:
-        # TODO Should this operation be at the point we import the fluxes?
-        if minErr is not None:
-            err_fraction = self.emissionErr / self.emissionFluxes
-            idcs_smallErr = err_fraction < minErr
-            self.emissionFluxes = minErr * self.obsLineFluxes[idcs_smallErr]
-
-        if verbose:
-            print(f'\n- Input lines ({self.lineLabels.size})')
-            for i in range(self.lineLabels.size):
-                lineReference = f'-- {self.lineLabels[i]} ({self.lineIons[i]}) '
-                lineFlux = ' flux = {:.3f} +/- {:.3f} || err % = {:.3f}'.format(self.emissionFluxes[i],
+                lineFlux = ' flux = {:.4f} +/- {:.4f} || err % = {:.4f}'.format(self.emissionFluxes[i],
                                                                                 self.emissionErr[i],
                                                                                 self.emissionErr[i] /
                                                                                 self.emissionFluxes[i])
                 print(lineReference + lineFlux)
 
-                # warnLine = '{}'.format('|| WARNING obsLineErr = {:.4f}'.format(lineErr[i]) if lineErr[i] != lineFitErr[i] else '')
-                # displayText = '{} flux = {:.4f} +/- {:.4f} || err % = {:.5f} {}'.format(lineLabels[i], lineFluxes[i],
-                #                                                                         lineFitErr[i],
-                #                                                                         lineFitErr[i] / lineFluxes[i],
-                #                                                                         warnLine)
-                # print(displayText)
-
         return
+
 
     def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=0, verbose=True):
 
         # Combine regions data
-        self.set_simulation_variables()
+        self.set_simulation_variables(minErr=0.02)
 
         # Simulation prios configuration # TODO we are not using these ones
         self.modelParameters = model_parameters
@@ -229,12 +193,34 @@ class SpectraSynthesizer(MCOutputDisplay):
             # Display prior configuration
             if verbose:
                 print(f'-- {param} {self.priorDict[param][0]} dist : mu = {self.priorDict[param][1]}, '
-                      f'std = {self.priorDict[param][2]}, normConst = {self.priorDict[param][3]},' # TODO This will need to increase for parametrisaton
+                      f'std = {self.priorDict[param][2]}, normConst = {self.priorDict[param][3]},'  # TODO This will need to increase for parametrisaton
                       f' n_regions = {n_regions}')
+
+        # Add parameters sampled in log scale
+        self.priorDict['logParams_list'] = prior_conf_dict['logParams_list']
 
         return
 
     def set_prior(self, param, abund=False, name_param=None):
+
+        # Load the corresponding probability distribution
+        probDist = getattr(pymc3, self.priorDict[param][0])
+
+        if abund:
+            priorFunc = probDist(name_param, self.priorDict[param][1], self.priorDict[param][2]) \
+                        * self.priorDict[param][3] + self.priorDict[param][4]
+
+        elif probDist.__name__ in ['HalfCauchy']:  # These distributions only have one parameter
+            priorFunc = probDist(param, self.priorDict[param][1], shape=self.total_regions) \
+                        * self.priorDict[param][3] + self.priorDict[param][4]
+
+        else:
+            priorFunc = probDist(param, self.priorDict[param][1], self.priorDict[param][2], shape=self.total_regions) \
+                        * self.priorDict[param][3] + self.priorDict[param][4]
+
+        return priorFunc
+
+    def set_prior_backUp(self, param, abund=False, name_param=None):
 
         probDist = getattr(pymc3, self.priorDict[param][0])
 
@@ -269,7 +255,8 @@ class SpectraSynthesizer(MCOutputDisplay):
             for idx in range(self.obsIons.size):
                 ion = self.obsIons[idx]
                 if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
-                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
+                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True,
+                                                                              name_param=self.abundObjArray[idx])
 
             # Specific transition priors
             tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
@@ -279,23 +266,24 @@ class SpectraSynthesizer(MCOutputDisplay):
                 i_region = self.region_vector[i]
                 lineLabel = self.lineLabels[i]
                 lineIonRef = self.lineIons[i]
-                lineIon = self.lineLocalIon[i] # TODO warning this is local
+                lineIon = self.lineLocalIon[i]  # TODO warning this is local
                 lineFlambda = self.lineFlambda[i]
                 fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
                 emisCoef = self.emisCoef[lineLabel]
                 emisEq = self.emisEq[lineLabel]
 
-                lineFlux_i = calcEmFluxes_Eq(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region], tau[i_region],
-                                          self.abund_dict,
-                                          i, lineLabel, lineIon, lineFlambda,
-                                          fluxEq=fluxEq,
-                                          ftau_coeffs=self.ftauCoef,
-                                          emisCoeffs=emisCoef,
-                                          emis_func=emisEq,
-                                          indcsLabelLines=self.indcsLabelLines,
-                                          He1r_check=self.indcsIonLines['He1r'],
-                                          HighTemp_check=self.highTemp_check,
-                                          region_ext=f'_{i_region}')
+                lineFlux_i = calcEmFluxes_Eq(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region],
+                                             tau[i_region],
+                                             self.abund_dict,
+                                             i, lineLabel, lineIon, lineFlambda,
+                                             fluxEq=fluxEq,
+                                             ftau_coeffs=self.ftauCoef,
+                                             emisCoeffs=emisCoef,
+                                             emis_func=emisEq,
+                                             indcsLabelLines=self.indcsLabelLines,
+                                             He1r_check=self.indcsIonLines['He1r'],
+                                             HighTemp_check=self.highTemp_check,
+                                             region_ext=f'_{i_region}')
 
                 # Assign the new value in the tensor
                 fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
@@ -317,7 +305,80 @@ class SpectraSynthesizer(MCOutputDisplay):
         fluxTensor = tt.zeros(self.lineLabels.size)
 
         self.logFlux = np.log10(self.emissionFluxes)
-        self.logFluxErr = np.log10(1 + self.emissionErr/self.emissionFluxes)
+        self.logFluxErr = np.log10(1 + self.emissionErr / self.emissionFluxes)
+        self.paramDict = {}  # FIXME do I need this one for loop inferences
+
+        with pymc3.Model() as self.inferenModel:
+
+            # Declare model parameters priors
+            self.paramDict['n_e'] = self.set_prior('n_e')
+            self.paramDict['T_low'] = self.set_prior('T_low')
+            self.paramDict['cHbeta'] = self.set_prior('cHbeta')
+
+            # Establish model temperature structure
+            if include_Thigh_prior:
+                self.paramDict['T_high'] = self.set_prior('T_high')
+            else:
+                self.paramDict['T_high'] = TOIII_TSIII_relation(self.paramDict['T_low'])
+            emisCoord_low = tt.stack([[self.paramDict['T_low'][0]], [self.paramDict['n_e'][0]]], axis=-1)
+            emisCoord_high = tt.stack([[self.paramDict['T_high'][0]], [self.paramDict['n_e'][0]]], axis=-1)
+
+            # Establish model composition
+            for ion in self.obsIons:
+                if ion != 'H1r':
+                    self.paramDict[ion] = self.set_prior(ion, abund=True, name_param=ion)
+                else:
+                    self.paramDict[ion] = 0.0
+
+            # Loop through the lines to compute the synthetic fluxes
+            for i in self.linesRangeArray:
+
+                # Declare line properties
+                lineLabel = self.lineLabels[i]
+                lineIon = self.lineIons[i]
+                lineFlambda = self.lineFlambda[i]
+
+                # Compute emisivity for the corresponding ion temperature
+                T_calc = emisCoord_high if self.highTemp_check[i] else emisCoord_low
+                line_emis = self.emisGridInterpFun[lineLabel](T_calc)
+
+                # Declare fluorescence correction
+                lineftau = 0.0
+
+                # Compute line flux
+                lineFlux_i = self.emtt.compute_flux(lineLabel,
+                                                    line_emis[0][0],
+                                                    self.paramDict['cHbeta'],
+                                                    lineFlambda,
+                                                    self.paramDict[lineIon],
+                                                    lineftau,
+                                                    O3=self.paramDict['O3'],
+                                                    T_high=self.paramDict['T_high'])
+
+
+                # Assign the new value in the tensor
+                fluxTensor = storeValueInTensor(i, lineFlux_i[0], fluxTensor)
+                # tt.inc_subtensor(fluxTensor[i], lineFlux_i)
+                #                       x             y
+
+            # Store computed fluxes
+            pymc3.Deterministic('calcFluxes_Op', fluxTensor)
+
+            # Likelihood gas components
+            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=self.logFluxErr, observed=self.logFlux)
+
+            # Display simulation data
+            displaySimulationData(self.inferenModel)
+
+        return
+
+    def inference_emisGrid_model_backUp(self, include_reddening=True, include_Thigh_prior=True):
+
+        # Container to store the synthetic line fluxes
+        fluxTensor = tt.zeros(self.lineLabels.size)
+
+        self.logFlux = np.log10(self.emissionFluxes)
+        self.logFluxErr = np.log10(1 + self.emissionErr / self.emissionFluxes)
 
         with pymc3.Model() as self.inferenModel:
 
@@ -335,11 +396,13 @@ class SpectraSynthesizer(MCOutputDisplay):
             for idx in range(self.obsIons.size):
                 ion = self.obsIons[idx]
                 if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
-                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
+                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True,
+                                                                              name_param=self.abundObjArray[idx])
 
             # Specific transition priors
             if 'He1r' not in self.indcsIonLines:
-                self.indcsIonLines['He1r'] = np.zeros(self.region_vector.size, dtype=bool) # TODO nasty trick will need to remake
+                self.indcsIonLines['He1r'] = np.zeros(self.region_vector.size,
+                                                      dtype=bool)  # TODO nasty trick will need to remake
             tau = self.set_prior('tau') if 'He1r' in self.obsIons else np.zeros(self.region_vector.size)
 
             if 'O2_7319A_b' not in self.indcsLabelLines:
@@ -350,18 +413,19 @@ class SpectraSynthesizer(MCOutputDisplay):
                 i_region = self.region_vector[i]
                 lineLabel = self.lineLabels[i]
                 lineIonRef = self.lineIons[i]
-                lineIon = self.lineLocalIon[i] # TODO warning this is local
+                lineIon = self.lineLocalIon[i]  # TODO warning this is local
                 lineFlambda = self.lineFlambda[i]
                 fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
                 emisInter = self.emisGridDict[lineLabel]
 
-                lineFlux_i = calcEmFluxes_Grid(T_low[i_region], T_high[i_region], n_e[i_region], emisCoord_low, emisCoord_high,
-                                                     cHbeta[i_region], tau[i_region], self.abund_dict,
-                                                     i, lineLabel, lineIon, lineFlambda,
-                                                     emisInter, fluxEq, self.ftauCoef,
-                                                     self.indcsLabelLines, self.indcsIonLines['He1r'],
-                                                     self.highTemp_check,
-                                                     region_ext=f'_{i_region}')
+                lineFlux_i = calcEmFluxes_Grid(T_low[i_region], T_high[i_region], n_e[i_region], emisCoord_low,
+                                               emisCoord_high,
+                                               cHbeta[i_region], tau[i_region], self.abund_dict,
+                                               i, lineLabel, lineIon, lineFlambda,
+                                               emisInter, fluxEq, self.ftauCoef,
+                                               self.indcsLabelLines, self.indcsIonLines['He1r'],
+                                               self.highTemp_check,
+                                               region_ext=f'_{i_region}')
 
                 # Assign the new value in the tensor
                 fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
@@ -394,7 +458,8 @@ class SpectraSynthesizer(MCOutputDisplay):
             for idx in range(self.obsIons.size):
                 ion = self.obsIons[idx]
                 if ion != 'H1r':  # TODO check right place to exclude the hydrogen atoms
-                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True, name_param=self.abundObjArray[idx])
+                    self.abund_dict[self.abundObjArray[idx]] = self.set_prior(self.obsIons[idx], abund=True,
+                                                                              name_param=self.abundObjArray[idx])
 
             # Specific transition priors
             tau = self.set_prior('tau') if 'He1r' in self.obsIons else 0.0
@@ -404,23 +469,24 @@ class SpectraSynthesizer(MCOutputDisplay):
                 i_region = self.region_vector[i]
                 lineLabel = self.lineLabels[i]
                 lineIonRef = self.lineIons[i]
-                lineIon = self.lineLocalIon[i] # TODO warning this is local
+                lineIon = self.lineLocalIon[i]  # TODO warning this is local
                 lineFlambda = self.lineFlambda[i]
                 fluxEq = self.emtt.emFlux_ttMethods[self.eqLabelArray[i]]
                 emisCoef = self.emisCoef[lineLabel]
                 emisEq = self.emisEq[lineLabel]
 
-                lineFlux_i = calcEmFluxes_IFU(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region], tau[i_region],
-                                          self.abund_dict,
-                                          i, lineLabel, lineIon, lineFlambda,
-                                          fluxEq=fluxEq,
-                                          ftau_coeffs=self.ftauCoef,
-                                          emisCoeffs=emisCoef,
-                                          emis_func=emisEq,
-                                          indcsLabelLines=self.indcsLabelLines,
-                                          He1r_check=self.indcsIonLines['He1r'],
-                                          HighTemp_check=self.highTemp_check,
-                                          idx_region=i_region)
+                lineFlux_i = calcEmFluxes_IFU(T_low[i_region], T_high[i_region], n_e[i_region], cHbeta[i_region],
+                                              tau[i_region],
+                                              self.abund_dict,
+                                              i, lineLabel, lineIon, lineFlambda,
+                                              fluxEq=fluxEq,
+                                              ftau_coeffs=self.ftauCoef,
+                                              emisCoeffs=emisCoef,
+                                              emis_func=emisEq,
+                                              indcsLabelLines=self.indcsLabelLines,
+                                              He1r_check=self.indcsIonLines['He1r'],
+                                              HighTemp_check=self.highTemp_check,
+                                              idx_region=i_region)
 
                 # Assign the new value in the tensor
                 fluxTensor = storeValueInTensor(i, lineFlux_i, fluxTensor)
@@ -458,7 +524,11 @@ class SpectraSynthesizer(MCOutputDisplay):
             # Apply the parametrisation
             if ref_name in self.priorDict:
                 reparam0, reparam1 = self.priorDict[ref_name][3], self.priorDict[ref_name][4]
-                trace.add_values({param: trace[param] * reparam0 + reparam1}, overwrite=True)
+
+                if param not in self.priorDict['logParams_list']:
+                    trace.add_values({param: trace[param] * reparam0 + reparam1}, overwrite=True)
+                else:
+                    trace.add_values({param: np.power(10, trace[param] * reparam0 + reparam1)}, overwrite=True)
 
             # Fluxes parametrisation
             if param == 'calcFluxes_Op':
@@ -489,3 +559,57 @@ class SpectraSynthesizer(MCOutputDisplay):
             parseConfDict(conf_file, store_params, section_name='Fitting_results')
 
         return trace
+
+
+
+   # def declare_model_data(self, objLinesDF, ion_model, extinction_model, chemistry_model, n_region, minErr=None,
+    #                        verbose=True):
+    #
+    #     self.emissionCheck = True
+    #
+    #     self.lineLabels = objLinesDF.index.values
+    #     self.lineIons = objLinesDF.ion.values
+    #     self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.obsWave.values)
+    #     self.linesRangeArray = np.arange(self.lineLabels.size)
+    #
+    #     self.emissionFluxes = objLinesDF.obsFlux.values
+    #     self.emissionErr = objLinesDF.obsFluxErr.values
+    #
+    #     self.emisCoef = ion_model.emisCoeffs
+    #     self.emisEq = ion_model.ionEmisEq_fit
+    #     self.emisGridInterp = ion_model.emisGridInterp
+    #
+    #     self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons) #EmissionTensors()
+    #     self.eqLabelArray = assignFluxEq2Label(self.lineLabels, self.lineIons)
+    #     self.ftauCoef = ion_model.ftau_coeffs
+    #
+    #     self.indcsLabelLines = chemistry_model.indcsLabelLines
+    #     self.indcsIonLines = chemistry_model.indcsIonLines
+    #     self.highTemp_check = chemistry_model.indcsHighTemp
+    #     self.obsIons = chemistry_model.obsAtoms
+    #
+    #     # Establish minimum error on lines:
+    #     # TODO Should this operation be at the point we import the fluxes?
+    #     if minErr is not None:
+    #         err_fraction = self.emissionErr / self.emissionFluxes
+    #         idcs_smallErr = err_fraction < minErr
+    #         self.emissionFluxes = minErr * self.obsLineFluxes[idcs_smallErr]
+    #
+    #     if verbose:
+    #         print(f'\n- Input lines ({self.lineLabels.size})')
+    #         for i in range(self.lineLabels.size):
+    #             lineReference = f'-- {self.lineLabels[i]} ({self.lineIons[i]}) '
+    #             lineFlux = ' flux = {:.3f} +/- {:.3f} || err % = {:.3f}'.format(self.emissionFluxes[i],
+    #                                                                             self.emissionErr[i],
+    #                                                                             self.emissionErr[i] /
+    #                                                                             self.emissionFluxes[i])
+    #             print(lineReference + lineFlux)
+    #
+    #             # warnLine = '{}'.format('|| WARNING obsLineErr = {:.4f}'.format(lineErr[i]) if lineErr[i] != lineFitErr[i] else '')
+    #             # displayText = '{} flux = {:.4f} +/- {:.4f} || err % = {:.5f} {}'.format(lineLabels[i], lineFluxes[i],
+    #             #                                                                         lineFitErr[i],
+    #             #                                                                         lineFitErr[i] / lineFluxes[i],
+    #             #                                                                         warnLine)
+    #             # print(displayText)
+    #
+    #     return

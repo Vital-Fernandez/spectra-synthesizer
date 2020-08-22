@@ -265,7 +265,7 @@ class FigConf:
 
     def savefig(self, output_address, extension='.png', reset_fig=True, pad_inches=0.2, resolution=300.0):
 
-        plt.savefig(output_address + extension, dpi=resolution, bbox_inches='tight')
+        plt.savefig(str(output_address) + extension, dpi=resolution, bbox_inches='tight')
 
         return
 
@@ -623,15 +623,13 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         traces, traceTrueValuse = [], {}
         for param_name in params_list:
 
-            paramExt_name = param_name + region_ext
             if param_name in stats_dic:
                 ref_name = param_name
-            elif paramExt_name in stats_dic:
-                ref_name = paramExt_name
-            traces.append(ref_name)
+                traces.append(ref_name)
 
-            if param_name in true_values:
-                traceTrueValuse[ref_name] = true_values[param_name]
+                if true_values is not None:
+                    if param_name in true_values:
+                        traceTrueValuse[ref_name] = true_values[param_name]
 
         # Number of traces to plot
         n_traces = len(traces)
@@ -1005,10 +1003,14 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                 ref_name = paramExt_name
             traces.append(ref_name)
 
-            if param_name in true_values:
-                traceTrueValuse.append(true_values[param_name])
-            else:
-                traceTrueValuse.append(None)
+            if true_values is not None:
+                if param_name in true_values:
+                    traceTrueValuse.append(true_values[param_name])
+                else:
+                    traceTrueValuse.append(None)
+
+        if true_values is None:
+            traceTrueValuse = [None] * len(traces)
 
         # Reshape plot data
         list_arrays, labels_list = [], []
@@ -1060,8 +1062,12 @@ class MCOutputDisplay(FigConf, PdfPrinter):
     def table_mean_outputs(self, table_address, db_dict, true_values=None, idx_region = 0):
 
         # Table headers
-        headers = ['Parameter', 'True value', 'Mean', 'Standard deviation', 'Number of points', 'Median',
-                   r'$16^{th}$ percentil', r'$84^{th}$ percentil', r'Difference $\%$']
+        if true_values is not None:
+            headers = ['Parameter', 'True value', 'Mean', 'Standard deviation', 'Number of points', 'Median',
+                       r'$16^{th}$ percentil', r'$84^{th}$ percentil', r'Difference $\%$']
+        else:
+            headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
+                       r'$16^{th}$ percentil', r'$84^{th}$ percentil']
 
         ext_region = f'_{idx_region}'
 
@@ -1088,18 +1094,22 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                 true_value, perDif = 'None', 'None'
                 param_ref = param.replace(ext_region, '')
 
-                if param_ref in true_values:
-                    value_param = true_values[param_ref]
-                    if isinstance(value_param, (list, tuple, np.ndarray)):
-                        true_value = value_param[0]
-                    else:
-                        true_value = value_param
+                if true_values is not None:
+                    if param_ref in true_values:
+                        value_param = true_values[param_ref]
+                        if isinstance(value_param, (list, tuple, np.ndarray)):
+                            true_value = value_param[0]
+                        else:
+                            true_value = value_param
 
-                    perDif = str(np.round((1 - (true_value / median)) * 100, 2))
+                        perDif = str(np.round((1 - (true_value / median)) * 100, 2))
 
+                    self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
+                                     last_row=False if parameters_list[-1] != param else True)
 
-                self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
-                                 last_row=False if parameters_list[-1] != param else True)
+                else:
+                    self.addTableRow([label, mean_value, std, n_traces, median, p_16th, p_84th],
+                                     last_row=False if parameters_list[-1] != param else True)
 
         self.generate_pdf(clean_tex=True)
         # self.generate_pdf(output_address=table_address)

@@ -2,6 +2,8 @@ import numpy as np
 import inspect as insp
 import theano.tensor as tt
 from theano import function
+import exoplanet as xo
+
 
 def ftau_func(tau, temp, den, a, b, c, d):
     return 1 + tau / 2.0 * (a + (b + c * den + d * den * den) * temp / 10000.0)
@@ -21,15 +23,32 @@ def assignFluxEq2Label(labelsList, ionsList, recombLabels=['H1r', 'He1r', 'He2r'
     return eqLabelArray
 
 
-def gridInterpolatorFunction(interpolatorDict):
+def gridInterpolatorFunction(interpolatorDict, x_range, y_range, interp_type = 'point'):
+
     emisInterpGrid = {}
 
-    gridCord_i = tt.drow('gridCord_i')
+    if interp_type == 'point':
+        for line, emisGrid_i in interpolatorDict.items():
+            emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i[:, :, None], nout=1)
+            emisInterpGrid[line] = emisInterp_i.evaluate
 
-    for line in interpolatorDict:
-        emisInterpGrid[line] = function(inputs=[gridCord_i],
-                                        outputs=interpolatorDict[line](gridCord_i),
-                                        on_unused_input='ignore')
+    if interp_type == 'axis':
+        for line, emisGrid_i in interpolatorDict.items():
+            emisGrid_i_reshape = emisGrid_i.reshape((x_range.size, y_range.size, -1))
+            emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i_reshape)
+            emisInterpGrid[line] = emisInterp_i.evaluate
+
+    # emisInterpGrid = {}
+    #
+    # gridCord_i = tt.drow('gridCord_i')
+    #
+    # for line in interpolatorDict:
+    #     emisInterpGrid[line] = function(inputs=[gridCord_i],
+    #                                     outputs=interpolatorDict[line](gridCord_i),
+    #                                     on_unused_input='ignore')
+    #
+    # return emisInterpGrid
+
 
     return emisInterpGrid
 
@@ -107,6 +126,23 @@ class EmissionFluxModel:
 
     def __init__(self, label_list, ion_list):
 
+        # Dictionary storing the functions corresponding to each emission line
+        self.emFluxEqDict = {}
+
+        # Dictionary storing the parameter list corresponding to each emission line for theano functions
+        self.emFluxParamDict = {}
+
+        # Loop through all the observed lines and assign a flux equation
+        self.declare_emission_flux_functions(label_list, ion_list)
+
+        # Define dictionary with flux functions with flexible number of arguments
+        self.assign_flux_eqtt()
+
+        return
+
+    def declare_emission_flux_functions(self, label_list, ion_list):
+
+        # TODO this could read the attribute fun directly
         # Dictionary storing emission flux equation database (log scale)
         emFluxDb_log = {'H1r': self.ion_H1r_flux_log,
                         'He1r': self.ion_He1r_flux_log,
@@ -114,13 +150,6 @@ class EmissionFluxModel:
                         'metals': self.metals_flux_log,
                         'O2_7319A_b': self.ion_O2_7319A_b_flux_log}
 
-        # Dictionary storing the functions corresponding to each emission line
-        self.emFluxEqDict = {}
-
-        # Dictionary storing the parameter list corresponding to each emission line for theano functions
-        self.emFluxParamDict = {}
-
-        # Loop through all the observed lines and assign an flux function
         for i, lineLabel in enumerate(label_list):
 
             if ion_list[i] in ('H1r', 'He1r', 'He2r'):
@@ -141,14 +170,12 @@ class EmissionFluxModel:
 
         # Single lines
         if '_b' not in label:
-            print('-- Tenemos:', label)
             input_dict[label] = lambda emis_ratio, cHbeta, flambda, abund, ftau, kwargs: \
                 linefunction(emis_ratio, cHbeta, flambda, abund, ftau)
 
         # Blended lines
         # FIXME currently only working for O2_7319A_b the only blended line
         else:
-            print('-- Tenemos: _b', label)
             input_dict[label] = lambda emis_ratio, cHbeta, flambda, abund, ftau, kwargs: \
                 linefunction(emis_ratio, cHbeta, flambda, abund, ftau, kwargs['O3'], kwargs['T_high'])
 
@@ -180,13 +207,17 @@ class EmissionFluxModel:
         return np.log10(np.power(10, abund + emis_ratio - flambda * cHbeta - 12) + np.power(10, O3 + T_high -
                                                                                             flambda * cHbeta - 12))
 
+
 class EmissionTensors(EmissionFluxModel):
 
     def __init__(self, label_list, ion_list):
 
         # Inherit Emission flux model
-        print('- Compiling theano flux equations')
+        print('\n- Compiling theano flux equations')
         EmissionFluxModel.__init__(self,  label_list, ion_list)
+
+        # Loop through all the observed lines and assign a flux equation
+        self.declare_emission_flux_functions(label_list, ion_list)
 
         # Compile the theano functions for all the input emission lines
         for label, func in self.emFluxEqDict.items():
