@@ -1,5 +1,6 @@
 import corner
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib import cm
@@ -1070,6 +1071,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                        r'$16^{th}$ percentil', r'$84^{th}$ percentil']
 
         ext_region = f'_{idx_region}'
+        tableDF = pd.DataFrame(columns=headers[1:])
 
         # Generate pdf
         self.create_pdfDoc(table_address, pdf_type='table')
@@ -1104,19 +1106,29 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
                         perDif = str(np.round((1 - (true_value / median)) * 100, 2))
 
-                    self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
-                                     last_row=False if parameters_list[-1] != param else True)
+                    row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
+                    # self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
+                    #                  last_row=False if parameters_list[-1] != param else True)
 
                 else:
-                    self.addTableRow([label, mean_value, std, n_traces, median, p_16th, p_84th],
-                                     last_row=False if parameters_list[-1] != param else True)
+                    row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
+                    # self.addTableRow([label, mean_value, std, n_traces, median, p_16th, p_84th],
+                    #                  last_row=False if parameters_list[-1] != param else True)
+
+                self.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
+                tableDF.loc[row_i[0]] = row_i[1:]
 
         self.generate_pdf(clean_tex=True)
         # self.generate_pdf(output_address=table_address)
 
+        # Save the table as a dataframe.
+        with open(str(table_address) + '.txt', 'wb') as output_file:
+            string_DF = tableDF.to_string()
+            output_file.write(string_DF.encode('UTF-8'))
+
         return
 
-    def table_line_fluxes(self, table_address, db_dict, lines_list, obsFlux=None, obsErr = None):
+    def table_line_fluxes(self, table_address, db_dict, lines_list, obsFlux=None, obsErr=None):
 
         # Generate pdf
         self.create_pdfDoc(table_address, pdf_type='table')
@@ -1124,6 +1136,8 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         # Table headers
         headers = ['Line Label', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
                    r'$84^{th}$ $percentil$', r'$Difference\,\%$']
+
+        tableDF = pd.DataFrame(columns=headers[1:])
 
         self.pdf_insert_table(headers)
 
@@ -1150,8 +1164,15 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                      p84th_line_values[i], diff_Percentage[i]]
 
             self.addTableRow(row_i, last_row=False if lines_list[-1] != lines_list[i] else True)
+            tableDF.loc[lines_list[i]] = row_i[1:]
 
         self.generate_pdf(clean_tex=True)
+
+        # Save the table as a dataframe.
+        with open(str(table_address) + '.txt', 'wb') as output_file:
+            string_DF = tableDF.to_string()
+            output_file.write(string_DF.encode('UTF-8'))
+
 
 # class MCMC_printer(Basic_plots, Basic_tables):
 #

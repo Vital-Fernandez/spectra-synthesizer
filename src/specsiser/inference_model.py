@@ -153,10 +153,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         if minErr is not None:
             err_fraction = self.emissionErr / self.emissionFluxes
             idcs_smallErr = err_fraction < minErr
-            print('EEEEEEEEEEEEEEEEEEEEEOOOOOOOOOOOOOOOOOOOOOO')
-            print('Antes', self.emissionErr)
             self.emissionErr[idcs_smallErr] = minErr * self.emissionFluxes[idcs_smallErr]
-            print('Despues', self.emissionErr)
 
 
         # Load flux tensors

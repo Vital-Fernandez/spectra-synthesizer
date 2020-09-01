@@ -137,7 +137,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
 
     # Floats
     elif (key_label not in STRINGCONFKEYS) and ('_folder' not in key_label) and ('_file' not in key_label) and \
-            ('_list' not in key_label) and ('_b_components' not in key_label) and section_label not in ['blended_groups']:
+            ('_list' not in key_label) and ('_b_components' not in key_label) and section_label not in ['blended_groups', 'merged_groups']:
 
         output_variable = float(entry_value)
 
