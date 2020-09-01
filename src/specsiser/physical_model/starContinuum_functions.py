@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from collections import OrderedDict
@@ -7,6 +8,10 @@ from scipy.optimize import nnls
 from shutil import copyfile
 from os import chdir
 from subprocess import Popen, PIPE, STDOUT
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+from matplotlib import colors, cm
+
 
 # Reddening law from CCM89 # TODO Replace this methodology to an Import of Pyneb
 def CCM89_Bal07(Rv, wave):
@@ -34,6 +39,24 @@ def lineFinder(myFile, myText):
     for i in range(len(myFile)):
         if myText in myFile[i]:
             return i
+
+
+# Calculate galaxy mass from starlight fitting knowing its distance
+def Calculate_Total_Mass(Mass_uncalibrated, FileAddress, redshift):
+
+    # Huble_Constant = ufloat(74.3, 6.0)
+    Huble_Constant = 74.3
+
+    c = 299792  # km/s
+    mpc_2_cm = 3.086e15
+
+    distance = redshift * c / Huble_Constant * mpc_2_cm
+
+    Mass = Mass_uncalibrated * 1e17 * 4 * 3.1415 * distance * distance * (1 / 3.826e33)
+
+    LogMass = np.log10(Mass.nominal_value)
+
+    return LogMass
 
 
 class SspFitter:
@@ -206,10 +229,10 @@ class StarlightWrapper:
 
         GridLines = []
         GridLines.append("1")  # "[Number of fits to run]"])
-        GridLines.append(Default_BasesFolder)  # "[base_dir]"])
-        GridLines.append(Default_InputFolder)  # "[obs_dir]"])
-        GridLines.append(Default_MaskFolder)  # "[mask_dir]"])
-        GridLines.append(Default_OutputFoler)  # "[out_dir]"])
+        GridLines.append(f'{Default_BasesFolder}/')  # "[base_dir]"])
+        GridLines.append(f'{Default_InputFolder}/')  # "[obs_dir]"])
+        GridLines.append(f'{Default_MaskFolder}/')  # "[mask_dir]"])
+        GridLines.append(f'{Default_OutputFoler}/')  # "[out_dir]"])
         GridLines.append("-652338184")  # "[your phone number]"])
         GridLines.append("4500.0 ")  # "[llow_SN]   lower-lambda of S/N window"])
         GridLines.append("4550.0")  # "[lupp_SN]   upper-lambda of S/N window"])
@@ -259,11 +282,8 @@ class StarlightWrapper:
         v0_min_Line = lineFinder(StarlightOutput, "[v0_min  (km/s)]")
         vd_min_Line = lineFinder(StarlightOutput, "[vd_min  (km/s)]")
         Av_min_Line = lineFinder(StarlightOutput, "[AV_min  (mag)]")
-
         Nl_eff_line = lineFinder(StarlightOutput, "[Nl_eff]")
-
         SignalToNoise_Line = lineFinder(StarlightOutput, "## S/N")
-
         l_norm_Line = lineFinder(StarlightOutput, "## Normalization info") + 1
         llow_norm_Line = lineFinder(StarlightOutput, "## Normalization info") + 2
         lupp_norm_Line = lineFinder(StarlightOutput, "## Normalization info") + 3
@@ -286,13 +306,13 @@ class StarlightWrapper:
         SignalToNoise_upWave = float(StarlightOutput[SignalToNoise_Line + 2].split()[0])
         SignalToNoise_magnitudeWave = float(StarlightOutput[SignalToNoise_Line + 3].split()[0])
 
-        # Flux normailzation parameters
+        # Flux normalization parameters
         l_norm = float(StarlightOutput[l_norm_Line].split()[0])
         llow_norm = float(StarlightOutput[llow_norm_Line].split()[0])
         lupp_norm = float(StarlightOutput[lupp_norm_Line].split()[0])
         FluxNorm = float(StarlightOutput[NormFlux_Line].split()[0])
 
-        # Spectra pixels location
+        # Read continuum results
         Pixels_Number = int(StarlightOutput[SpecLine + 1].split()[0])  # Number of pixels in the spectra
         Ind_i = SpecLine + 2  # First pixel location
         Ind_f = Ind_i + Pixels_Number  # Final pixel location
@@ -310,6 +330,7 @@ class StarlightWrapper:
             Output_Flux[Index] = float(Line[2]) * FluxNorm
             Output_Mask[Index] = float(Line[3])
 
+        # Read fitting masks
         MaskPixels = [[], []]  # The 0 tag
         ClippedPixels = [[], []]  # The -1 tag
         FlagPixels = [[], []]  # The -2 tag
@@ -332,13 +353,49 @@ class StarlightWrapper:
                           SignalToNoise_magnitudeWave=SignalToNoise_magnitudeWave, l_norm=l_norm, llow_norm=llow_norm,
                           lupp_norm=lupp_norm, MaskPixels=MaskPixels, ClippedPixels=ClippedPixels, FlagPixels=FlagPixels)
 
+        # Get number of bases
+        BasesLine = lineFinder(StarlightOutput, "[N_base]")  # Location of my normalization flux in starlight output
+        Bases = int(BasesLine.split()[0])
+
+        # Location of my normalization flux in starlight output
+        Sl_DataHeader = lineFinder(StarlightOutput, "# j     x_j(%)      Mini_j(%)     Mcor_j(%)     age_j(yr)")
+        Ind_i = Sl_DataHeader + 1
+        Ind_f = Sl_DataHeader + Bases
+
+        index = []
+        x_j = []
+        Mini_j, Mcor_j = [], []
+        age_j, Z_j = [], []
+        LbyM, Mstars = [], []
+
+        for j in range(Ind_i, Ind_f + 1):
+            myDataLine = StarlightOutput[j].split()
+            index.append(float(myDataLine[0]))
+            x_j.append(float(myDataLine[1]))
+            Mini_j.append(float(myDataLine[2]))
+            Mcor_j.append(float(myDataLine[3]))
+            age_j.append(float(myDataLine[4]))
+            Z_j.append(float(myDataLine[5]))
+            LbyM.append(float(myDataLine[6]))
+            Mstars.append(float(myDataLine[7]))
+
+
+        Parameters = dict(Chi2=Chi2, Adev=Adev, SumXdev=SumXdev, Nl_eff=Nl_eff, v0_min=v0_min, vd_min=vd_min, Av_min=Av_min,
+                          SignalToNoise_lowWave=SignalToNoise_lowWave, SignalToNoise_upWave=SignalToNoise_upWave,
+                          SignalToNoise_magnitudeWave=SignalToNoise_magnitudeWave, l_norm=l_norm, llow_norm=llow_norm,
+                          lupp_norm=lupp_norm, MaskPixels=MaskPixels, ClippedPixels=ClippedPixels, FlagPixels=FlagPixels,
+                          index=index, x_j=x_j, Mini_j=Mini_j, Mcor_j=Mcor_j, age_j=age_j, Z_j=Z_j, LbyM=LbyM, Mstars=Mstars)
+
+
         return Input_Wavelength, Input_Flux, Output_Flux, Parameters
 
     def starlight_launcher(self, gridFile, executable_folder='/home/vital/'):
 
         chdir(executable_folder)
+        print(f'-- Runing folder: {os.getcwd()} {executable_folder==os.getcwd()}')
         Command = './StarlightChains_v04.exe < ' + str(gridFile)
-        print(f'Launching: {Command}')
+
+        print(f'-- Launching: {Command}')
         p = Popen(Command, shell=True, stdout=PIPE, stderr=STDOUT)
 
         for line in p.stdout.readlines():
@@ -348,6 +405,92 @@ class StarlightWrapper:
 
         return
 
+    def population_fraction_plots(self, fit_output, objName, parameter, ouput_folder, redshift=None):
 
+        # Extract the data from the starlight output
+        index, x_j, Mini_j, Mcor_j, age_j, Z_j, LbyM, Mstars = fit_output['index'], fit_output['x_j'], fit_output['Mini_j'],\
+                                                               fit_output['Mcor_j'], fit_output['age_j'], fit_output['Z_j'],\
+                                                               fit_output['LbyM'], fit_output['Mstars']
 
+        x_j, age_j, Mcor_j, Z_j = np.array(x_j), np.array(age_j), np.array(Mcor_j), np.array(Z_j)
 
+        # Compute galaxy mass
+        if redshift is not None:
+            LogMass = Calculate_Total_Mass(fit_output['mass_starlight'], fit_output, redshift)
+
+        # Establish configuration for either mass or light fraction plots
+        if parameter == 'Light_fraction':
+            labelsDict = {'xlabel': r'$log(Age)$',
+                          'ylabel': r'Light fraction %$',
+                          'title': f'Galaxy {objName} SSP synthesis light fraction'}
+            fraction_param = x_j
+
+        elif parameter == 'Mass_fraction':
+            labelsDict = {'xlabel': r'$log(Age)$',
+                          'ylabel': r'Mass fraction %$',
+                          'title': f'Galaxy {objName} SSP synthesis mass fraction'}
+            fraction_param = Mcor_j
+
+        # Get metallicities from calculation
+        zValues = np.sort(np.array(np.unique(Z_j)))
+
+        # Get color list for metallicities
+        self.gen_colorList(0, len(zValues))
+
+        # Define age bins width
+        log_agej = np.log10(age_j)
+        ageBins_HW = 0.10
+        log_ageBins = np.arange(4.80, 10.60, ageBins_HW)
+
+        # Plot the age bins per metallicity:
+        fig, ax = plt.subplots(figsize=(9, 9))
+
+        for log_t in log_ageBins:
+
+            idx_age = (log_agej >= log_t - ageBins_HW / 2) & (log_agej <= log_t + ageBins_HW / 2)
+            idx_param = (fraction_param > 0.0)
+            idx_total = idx_age & idx_param
+
+            # Check populatioins were found
+            if np.sum(idx_total) > 1:
+
+                # Load x and y data for the plot
+                z_array = Z_j[idx_total]
+                param_array = fraction_param[idx_total]
+
+                # Sort by decreasing param value
+                idx_sort = np.argsort(param_array)[::-1]
+                z_sort = z_array[idx_sort]
+                param_sort = param_array[idx_sort]
+
+                # Plot the individual bars
+                for i in range(len(param_sort)):
+                    x, y = log_t, param_sort[i]
+                    label = 'Z = {}'.format(z_sort[i])
+                    idx_color = np.where(zValues == z_sort[i])[0][0]
+                    color = self.get_color(idx_color)
+                    ax.bar(x, y, label=label, color=color, width=ageBins_HW / 2, fill=True, edgecolor=color,
+                                  log=True)
+
+                # Plot age bin total
+                param_total = sum(param_array)
+                ax.bar(log_t, param_total, label='Age bin total', width=ageBins_HW, fill=False,
+                              edgecolor='black', linestyle='--', log=True)
+
+        # Change the axis format to replicate the style of Dani Miralles
+        ax.set_yscale('log')
+        ax.set_ylim([0, 100])
+        ax.set_xlim([5.5, 10.5])
+        ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2f'))
+        ax.legend()
+        ax.update(labelsDict)
+        plt.show()
+
+        return
+
+    def gen_colorList(self, vmin=0.0, vmax=1.0, color_palette=None):
+        self.colorNorm = colors.Normalize(vmin, vmax)
+        self.cmap = cm.get_cmap(name=color_palette)
+
+    def get_color(self, idx):
+        return self.cmap(self.colorNorm(idx))
