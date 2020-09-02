@@ -355,7 +355,7 @@ class StarlightWrapper:
 
         # Get number of bases
         BasesLine = lineFinder(StarlightOutput, "[N_base]")  # Location of my normalization flux in starlight output
-        Bases = int(BasesLine.split()[0])
+        Bases = int(StarlightOutput[BasesLine].split()[0])
 
         # Location of my normalization flux in starlight output
         Sl_DataHeader = lineFinder(StarlightOutput, "# j     x_j(%)      Mini_j(%)     Mcor_j(%)     age_j(yr)")
@@ -377,15 +377,13 @@ class StarlightWrapper:
             age_j.append(float(myDataLine[4]))
             Z_j.append(float(myDataLine[5]))
             LbyM.append(float(myDataLine[6]))
-            Mstars.append(float(myDataLine[7]))
-
+            Mstars.append(float(myDataLine[8]))
 
         Parameters = dict(Chi2=Chi2, Adev=Adev, SumXdev=SumXdev, Nl_eff=Nl_eff, v0_min=v0_min, vd_min=vd_min, Av_min=Av_min,
                           SignalToNoise_lowWave=SignalToNoise_lowWave, SignalToNoise_upWave=SignalToNoise_upWave,
                           SignalToNoise_magnitudeWave=SignalToNoise_magnitudeWave, l_norm=l_norm, llow_norm=llow_norm,
                           lupp_norm=lupp_norm, MaskPixels=MaskPixels, ClippedPixels=ClippedPixels, FlagPixels=FlagPixels,
                           index=index, x_j=x_j, Mini_j=Mini_j, Mcor_j=Mcor_j, age_j=age_j, Z_j=Z_j, LbyM=LbyM, Mstars=Mstars)
-
 
         return Input_Wavelength, Input_Flux, Output_Flux, Parameters
 
@@ -405,7 +403,27 @@ class StarlightWrapper:
 
         return
 
-    def population_fraction_plots(self, fit_output, objName, parameter, ouput_folder, redshift=None):
+    def stellar_fit_comparison_plot(self, objName, inWave, inFlux, outFlux, outputFileAddress):
+
+        labelsDict = {'xlabel': r'Wavelength $(\AA)$',
+                      'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})\cdot10^{20}$',
+                      'title': f'Galaxy {objName} stellar continuum fitting'}
+
+        idcs_plot = inFlux > 0.0
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.plot(inWave[idcs_plot], inFlux[idcs_plot], label='Input starlight flux')
+        ax.plot(inWave[idcs_plot], outFlux[idcs_plot], label='Output starlight fitting')
+        ax.update(labelsDict)
+        ax.legend()
+        ax.set_yscale('log')
+        plt.savefig(outputFileAddress, bbox_inches='tight')
+        plt.show()
+        # fig.clear()
+
+        return
+
+    def population_fraction_plots(self, fit_output, objName, parameter, ouputFileAddress, redshift=None):
 
         # Extract the data from the starlight output
         index, x_j, Mini_j, Mcor_j, age_j, Z_j, LbyM, Mstars = fit_output['index'], fit_output['x_j'], fit_output['Mini_j'],\
@@ -478,13 +496,15 @@ class StarlightWrapper:
                               edgecolor='black', linestyle='--', log=True)
 
         # Change the axis format to replicate the style of Dani Miralles
-        ax.set_yscale('log')
+        # ax.set_yscale('log')
         ax.set_ylim([0, 100])
         ax.set_xlim([5.5, 10.5])
         ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2f'))
         ax.legend()
         ax.update(labelsDict)
-        plt.show()
+        # plt.show()
+
+        plt.savefig(ouputFileAddress, bbox_inches='tight')
 
         return
 
