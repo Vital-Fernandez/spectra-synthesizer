@@ -418,8 +418,8 @@ class StarlightWrapper:
         ax.legend()
         ax.set_yscale('log')
         plt.savefig(outputFileAddress, bbox_inches='tight')
-        plt.show()
-        # fig.clear()
+        # plt.show()
+        fig.clear()
 
         return
 
