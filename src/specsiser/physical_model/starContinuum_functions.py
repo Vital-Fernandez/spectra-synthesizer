@@ -505,6 +505,7 @@ class StarlightWrapper:
         # plt.show()
 
         plt.savefig(ouputFileAddress, bbox_inches='tight')
+        fig.clear()
 
         return
 
