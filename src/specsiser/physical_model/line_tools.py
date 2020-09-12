@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import astropy.units as au
 from lmfit.models import GaussianModel, LinearModel, PolynomialModel, height_expr
-from lmfit import Parameters
+from lmfit import Parameters, fit_report
 from astropy.modeling.polynomial import Polynomial1D
 from matplotlib.widgets import SpanSelector
 from specutils.manipulation import noise_region_uncertainty
@@ -323,23 +323,23 @@ class LineMeasurer:
                 lineArea = self.fit_output.params[f'{line_i}_amplitude']  # BUG in lmfit amplitude is the area
 
                 self.p1, self.p1_Err = p1, p1_Err
-                self.lineGaussFlux, self.lineGaussErr = lineArea.value, lineArea.stderr
-                self.eqw, self.eqwErr = self.lineGaussFlux/self.cont, self.lineGaussErr/self.cont
-
-                self.label_formatter(line_i)
-
-                # Add new entries to table
-                line_conf = {'wavelength': float(line_i[line_i.find('_') + 1:-1]),
-                             'latexLabel': self.label_formatter(line_i),
-                             'w1': self.linesDF.loc[lineLabel, 'w1'],
-                             'w2': self.linesDF.loc[lineLabel, 'w2'],
-                             'w3': self.linesDF.loc[lineLabel, 'w3'],
-                             'w4': self.linesDF.loc[lineLabel, 'w4'],
-                             'w5': self.linesDF.loc[lineLabel, 'w5'],
-                             'w6': self.linesDF.loc[lineLabel, 'w6'],
-                             'blended': n_comps,
-                             'observation': 'detected'}
-                self.results_to_database(line_i, self.linesDF, **line_conf)
+                # self.lineGaussFlux, self.lineGaussErr = lineArea.value, lineArea.stderr
+                # self.eqw, self.eqwErr = self.lineGaussFlux/self.cont, self.lineGaussErr/self.cont
+                #
+                # self.label_formatter(line_i)
+                #
+                # # Add new entries to table
+                # line_conf = {'wavelength': float(line_i[line_i.find('_') + 1:-1]),
+                #              'latexLabel': self.label_formatter(line_i),
+                #              'w1': self.linesDF.loc[lineLabel, 'w1'],
+                #              'w2': self.linesDF.loc[lineLabel, 'w2'],
+                #              'w3': self.linesDF.loc[lineLabel, 'w3'],
+                #              'w4': self.linesDF.loc[lineLabel, 'w4'],
+                #              'w5': self.linesDF.loc[lineLabel, 'w5'],
+                #              'w6': self.linesDF.loc[lineLabel, 'w6'],
+                #              'blended': n_comps,
+                #              'observation': 'detected'}
+                # self.results_to_database(line_i, self.linesDF, **line_conf)
 
         return
 
@@ -428,8 +428,7 @@ class LineMeasurer:
             define_lmfit_param(self.fit_params, f'{wide_comp}_amplitude', None, user_conf)
             define_lmfit_param(self.fit_params, f'{wide_comp}_center', None, user_conf)
             define_lmfit_param(self.fit_params, f'{wide_comp}_sigma', None, user_conf)
-            define_lmfit_param(self.fit_params, f'{wide_comp}_height',
-                               user_conf={'expr': f'0.3989423 * {wide_comp}_amplitude / {wide_comp}_sigma'})
+            define_lmfit_param(self.fit_params, f'{wide_comp}_height', user_conf={'expr': f'0.3989423 * {wide_comp}_amplitude / {wide_comp}_sigma'})
             self.fit_params.add(f'{wide_comp}_height', expr=f'0.3989423 * {wide_comp}_amplitude / {wide_comp}_sigma')
 
             fit_function += wideModel
@@ -438,7 +437,14 @@ class LineMeasurer:
         idcs_fit = idcs_line + idcs_continua if continuum_check else idcs_line
 
         # Perform the fitting
+        if lineLabel == 'H1_6563A_b':
+            print('This is mine')
         fitOutput = fit_function.fit(self.flux[idcs_fit], self.fit_params, x=self.wave[idcs_fit])
+        print(fit_report(fitOutput))
+        # fig, ax = plt.subplots()
+        # ax.plot(self.wave[idcs_fit], self.flux[idcs_fit])
+        # fig.savefig("test.png")
+        # plt.show()
 
         return fitOutput
 

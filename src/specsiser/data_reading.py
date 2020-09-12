@@ -7,7 +7,8 @@ from errno import ENOENT
 from scipy.interpolate import interp1d
 from distutils.util import strtobool
 from collections import Sequence
-
+from pathlib import Path
+from data_printing import int_to_roman, label_decomposition
 __all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
            'parseConfDict', 'parseConfList']
 
@@ -555,7 +556,6 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
 
     # Get the references for the lines treatment
     idx_obj_lines = linesDb.index.isin(outputDF.index)
-    outputDF['ion'] = linesDb.loc[idx_obj_lines].ion.astype(str)
     outputDF['lineType'] = linesDb.loc[idx_obj_lines].lineType.astype(str)
     outputDF['pynebCode'] = linesDb.loc[idx_obj_lines].pynebCode
     outputDF['latexLabel'] = linesDb.loc[idx_obj_lines].latexLabel
@@ -565,6 +565,16 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
     if exclude_lines is not None:
         idx_excludedLines = outputDF.index.isin(exclude_lines)
         outputDF.drop(index=outputDF.loc[idx_excludedLines].index.values, inplace=True)
+
+    # Correct missing ions from line labels if possible
+    idx_no_ion = pd.isnull(outputDF.ion)
+    for linelabel in outputDF.loc[idx_no_ion].index:
+        ion_array, wave_array, latexLabel_array = label_decomposition([linelabel])
+        if ion_array[0] in ('H1', 'He1', 'He2'):
+            outputDF.loc[linelabel, 'ion'] = ion_array[0] + 'r'
+        else:
+            outputDF.loc[linelabel, 'ion'] = ion_array[0]
+
 
     return outputDF
 
@@ -592,31 +602,34 @@ def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
 
 
 # Function to restore PYMC3 simulations using pickle
-def load_MC_fitting(db_address, return_dictionary=True, normConstants=None):
+def load_MC_fitting(output_address):
 
-    # Restore the trace
+    db_address = Path(output_address)
+
+    # Output dictionary with the results
+    fit_results = {}
+
+    # Restore the pymc output file
     with open(db_address, 'rb') as trace_restored:
         db = pickle.load(trace_restored)
 
-    # Return Pymc3 db object
-    if return_dictionary is False:
-        return db
+    model_reference, trace = db['model'], db['trace']
+    fit_results.update(db)
 
-    # Return dictionary with the traces
-    else:
-        model_reference, trace = db['model'], db['trace']
+    # params_dict = {}
+    # for parameter in trace.varnames:
+    #     if ('_log__' not in parameter) and ('interval' not in parameter):
+    #         params_dict[parameter] = trace[parameter]
+    # fit_results['parameters'] = params_dict
 
-        traces_dict = {} # TODO this is useless now traces are stored corrected
-        for parameter in trace.varnames:
-            if ('_log__' not in parameter) and ('interval' not in parameter):
-                prior_key = parameter + '_prior'
-                if normConstants is not None:
-                    trace_i = trace[parameter]
-                else:
-                    trace_i = trace[parameter]
-                traces_dict[parameter] = trace_i
+    # Restore the input data file
+    configFileAddress = db_address.with_suffix('.txt')
+    output_dict = loadConfData(configFileAddress, group_variables=False)
+    fit_results['Input_data'] = output_dict['Input_data']
+    fit_results['Fitting_results'] = output_dict['Fitting_results']
+    fit_results['Simulation_fluxes'] = output_dict['Simulation_fluxes']
 
-        return traces_dict
+    return fit_results
 
 
 

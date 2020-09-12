@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import pandas as pd
 from collections import OrderedDict
 from scipy.signal.signaltools import convolve2d
 from scipy.interpolate.interpolate import interp1d
@@ -42,21 +41,22 @@ def lineFinder(myFile, myText):
 
 
 # Calculate galaxy mass from starlight fitting knowing its distance
-def Calculate_Total_Mass(Mass_uncalibrated, FileAddress, redshift):
+def computeSSP_galaxy_mass(mass_uncalibrated, flux_norm, redshift):
 
-    # Huble_Constant = ufloat(74.3, 6.0)
-    Huble_Constant = 74.3
+    # Model constants
+    c_kms = 299792  # km/s ufloat(74.3, 6.0)
+    Huble_Constant = 74.3  # (km/s / Mpc)
+    mpc_2_cm = 3.086e24  # cm/mpc
 
-    c = 299792  # km/s
-    mpc_2_cm = 3.086e15
+    # Compute the distance
+    dist_mpc = redshift * (c_kms / Huble_Constant)
+    dist_cm = dist_mpc * mpc_2_cm
 
-    distance = redshift * c / Huble_Constant * mpc_2_cm
+    # Compute mass in solar masses
+    Mass = mass_uncalibrated * flux_norm * 4 * np.pi * np.square(dist_cm) * (1 / 3.826e33)
+    logMass = np.log10(Mass)
 
-    Mass = Mass_uncalibrated * 1e17 * 4 * 3.1415 * distance * distance * (1 / 3.826e33)
-
-    LogMass = np.log10(Mass.nominal_value)
-
-    return LogMass
+    return logMass
 
 
 class SspFitter:
@@ -279,6 +279,8 @@ class StarlightWrapper:
         Chi2Line = lineFinder(StarlightOutput, "[chi2/Nl_eff]")
         AdevLine = lineFinder(StarlightOutput, "[adev (%)]")
         SumXdevLine = lineFinder(StarlightOutput, "[sum-of-x (%)]")
+        Mini_totLine = lineFinder(StarlightOutput, "[Mini_tot (???)]")
+        Mcor_totLine = lineFinder(StarlightOutput, "[Mcor_tot (???)]")
         v0_min_Line = lineFinder(StarlightOutput, "[v0_min  (km/s)]")
         vd_min_Line = lineFinder(StarlightOutput, "[vd_min  (km/s)]")
         Av_min_Line = lineFinder(StarlightOutput, "[AV_min  (mag)]")
@@ -297,6 +299,8 @@ class StarlightWrapper:
         Adev = float(StarlightOutput[AdevLine].split()[0])
         SumXdev = float(StarlightOutput[SumXdevLine].split()[0])
         Nl_eff = float(StarlightOutput[Nl_eff_line].split()[0])
+        Mini_tot = float(StarlightOutput[Mini_totLine].split()[0])
+        Mcor_tot = float(StarlightOutput[Mcor_totLine].split()[0])
         v0_min = float(StarlightOutput[v0_min_Line].split()[0])
         vd_min = float(StarlightOutput[vd_min_Line].split()[0])
         Av_min = float(StarlightOutput[Av_min_Line].split()[0])
@@ -383,7 +387,8 @@ class StarlightWrapper:
                           SignalToNoise_lowWave=SignalToNoise_lowWave, SignalToNoise_upWave=SignalToNoise_upWave,
                           SignalToNoise_magnitudeWave=SignalToNoise_magnitudeWave, l_norm=l_norm, llow_norm=llow_norm,
                           lupp_norm=lupp_norm, MaskPixels=MaskPixels, ClippedPixels=ClippedPixels, FlagPixels=FlagPixels,
-                          index=index, x_j=x_j, Mini_j=Mini_j, Mcor_j=Mcor_j, age_j=age_j, Z_j=Z_j, LbyM=LbyM, Mstars=Mstars)
+                          index=index, x_j=x_j, Mini_j=Mini_j, Mcor_j=Mcor_j, age_j=age_j, Z_j=Z_j, LbyM=LbyM, Mstars=Mstars,
+                          Mini_tot=Mini_tot, Mcor_tot=Mcor_tot)
 
         return Input_Wavelength, Input_Flux, Output_Flux, Parameters
 
@@ -418,8 +423,8 @@ class StarlightWrapper:
         ax.legend()
         ax.set_yscale('log')
         plt.savefig(outputFileAddress, bbox_inches='tight')
-        # plt.show()
-        fig.clear()
+        plt.show()
+        # fig.clear()
 
         return
 

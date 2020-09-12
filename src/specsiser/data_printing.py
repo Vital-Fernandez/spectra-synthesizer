@@ -7,7 +7,6 @@ from matplotlib import cm
 from matplotlib import rcParams
 from matplotlib import colors
 from matplotlib.mlab import detrend_mean
-from numpy import reshape, percentile, median
 from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Section, Tabu, Table, LongTable
 from functools import partial
 from collections import Sequence
@@ -46,6 +45,8 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'O2': r'$\frac{O^{+}}{H^{+}}$',
              'O3': r'$\frac{O^{2+}}{H^{+}}$',
              'Cl3': r'$\frac{Cl^{2+}}{H^{+}}$',
+             'Ne3': r'$\frac{Ne^{2+}}{H^{+}}$',
+             'Fe3': r'$\frac{Fe^{2+}}{H^{+}}$',
              'N2': r'$\frac{N^{+}}{H^{+}}$',
              'Ar3': r'$\frac{Ar^{2+}}{H^{+}}$',
              'Ar4': r'$\frac{Ar^{3+}}{H^{+}}$',
@@ -64,6 +65,9 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'x': r'x interpolator$',
              'ICF_SIV': r'$ICF\left(S^{3+}\right)$'}
 
+VAL_LIST = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]
+
 def label_formatting(line_label):
     label = line_label.replace('_', '\,\,')
     if label[-1] == 'A':
@@ -71,6 +75,50 @@ def label_formatting(line_label):
     label = '$' + label + '$'
 
     return label
+
+
+def int_to_roman(num):
+    i, roman_num = 0, ''
+    while num > 0:
+        for _ in range(num // VAL_LIST[i]):
+            roman_num += SYB_LIST[i]
+            num -= VAL_LIST[i]
+        i += 1
+    return roman_num
+
+
+def label_decomposition(lineList, recombAtoms=('H1', 'He1', 'He2'), combined_dict={}):
+
+    ion_array, wave_array, latexLabel_array = ['None'] * len(lineList), np.zeros(len(lineList)), ['None'] * len(lineList)
+
+    for idx, lineLabel in enumerate(lineList):
+
+        latex_label = ''
+        if lineLabel in combined_dict:
+            lineComponents = combined_dict[lineLabel].split('-')
+        else:
+            lineComponents = lineLabel.split('-')
+
+        for line_i in lineComponents:
+
+            ion = line_i[0:line_i.find('_')]
+            wavelength = line_i[line_i.find('_') + 1:-1]
+            units = '\AA' if line_i[-1] == 'A' else 'NoUnit'
+            atom, ionization = ion[:-1], int(ion[-1])
+            ionizationRoman = int_to_roman(ionization)
+
+            if ion in recombAtoms:
+                comp_Label = wavelength + units + '\,' + atom + ionizationRoman
+            else:
+                comp_Label = wavelength + units + '\,' + '[' + atom + ionizationRoman + ']'
+
+            if len(latex_label) == 0:
+                latex_label += comp_Label
+            else:
+                latex_label += '+' + comp_Label
+        ion_array[idx], wave_array[idx], latexLabel_array[idx] = ion, float(wavelength), '$'+latex_label+'$'
+
+    return ion_array, wave_array, latexLabel_array
 
 
 def _histplot_bins(column, bins=100):
@@ -615,62 +663,51 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def tracesPosteriorPlot(self, params_list, stats_dic, idx_region=0, true_values=None):
+    def tracesPosteriorPlot(self, plot_address, db_dict, true_values=None):
 
-        # Remove operations from the parameters list
-        traces_list = stats_dic.keys()
-        region_ext = f'_{idx_region}'
+        # Prepare the data
+        params_list = list(db_dict['Fitting_results'].keys())
 
-        traces, traceTrueValuse = [], {}
-        for param_name in params_list:
+        if true_values is not None:
+            trace_true_dict = {}
+            for param in params_list:
+                if param in true_values:
+                    trace_true_dict[param] = true_values[param]
 
-            if param_name in stats_dic:
-                ref_name = param_name
-                traces.append(ref_name)
+        n_traces = len(params_list)
 
-                if true_values is not None:
-                    if param_name in true_values:
-                        traceTrueValuse[ref_name] = true_values[param_name]
-
-        # Number of traces to plot
-        n_traces = len(traces)
-
+        # Plot format
         size_dict = {'axes.titlesize': 14, 'axes.labelsize': 14, 'legend.fontsize': 10,
-                     'xtick.labelsize':8, 'ytick.labelsize':8}
-
+                     'xtick.labelsize': 8, 'ytick.labelsize': 8}
         rcParams.update(size_dict)
-        fig = plt.figure(figsize=(8, n_traces))
 
-        # # Generate the color map
+        fig = plt.figure(figsize=(8, n_traces))
         colorNorm, cmap = self.gen_colorList(0, n_traces)
         gs = gridspec.GridSpec(n_traces * 2, 4)
         gs.update(wspace=0.2, hspace=1.8)
 
-        # Loop through the parameters and print the traces
+        traces = db_dict['trace']
         for i in range(n_traces):
 
-            # Creat figure axis
+            trace_code = params_list[i]
+            trace_array = traces[trace_code]
+
+            mean_value = np.mean(trace_array)
+            std_dev = np.std(trace_array)
+
             axTrace = fig.add_subplot(gs[2 * i:2 * (1 + i), :3])
             axPoterior = fig.add_subplot(gs[2 * i:2 * (1 + i), 3])
 
-            # Current trace
-            trace_code = traces[i]
-            trace_array = stats_dic[trace_code]
-
             # Label for the plot
-            mean_value = np.mean(stats_dic[trace_code])
-            std_dev = np.std(stats_dic[trace_code])
-            traceLatexRef = trace_code.replace(region_ext, '')
-
             if mean_value > 0.001:
-                label = r'{} = ${}$ $\pm${}'.format(latex_labels[traceLatexRef], np.round(mean_value, 4), np.round(std_dev, 4))
+                label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4), np.round(std_dev, 4))
             else:
-                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[traceLatexRef], mean_value, std_dev)
+                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
 
             # Plot the traces
             axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
             axTrace.axhline(y=mean_value, color=cmap(colorNorm(i)), linestyle='--')
-            axTrace.set_ylabel(latex_labels[traceLatexRef])
+            axTrace.set_ylabel(latex_labels[trace_code])
 
             # Plot the histograms
             axPoterior.hist(trace_array, bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
@@ -680,12 +717,16 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
             # Add true value if available
             if true_values is not None:
-                if trace_code in traceTrueValuse:
-                    value_param = traceTrueValuse[trace_code]
+                if trace_code in trace_true_dict:
+                    value_param = trace_true_dict[trace_code]
+
+                    # Nominal value and uncertainty
                     if isinstance(value_param, (list, tuple, np.ndarray)):
                         nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
                         axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
                         axPoterior.axvspan(nominal_value - std_value, nominal_value + std_value, alpha=0.5, color=cmap(colorNorm(i)))
+
+                    # Nominal value only
                     else:
                         nominal_value = value_param
                         axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
@@ -705,6 +746,9 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axPoterior.set_xticklabels(['',numberStringFormat(median),''])
             axTrace.set_yticks((percentile16th, median, percentile84th))
             axTrace.set_yticklabels((numberStringFormat(percentile16th), '', numberStringFormat(percentile84th)))
+
+            # Save the plot
+            plt.savefig(plot_address, dpi=200, bbox_inches='tight')
 
         return
 
@@ -894,11 +938,19 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             self.Axis[i].set_ylabel(self.labels_latex_dic[trace_code])
             self.legend_conf(self.Axis[i], loc=2)
 
-    def fluxes_distribution(self, lines_list, ions_list, function_key, db_dict, obsFluxes=None, obsErr=None, lineLabels = None):
+    def fluxes_distribution(self, plot_address, db_dict, n_columns=8, combined_dict={}):
+
+        # Input data
+        inputLabels = db_dict['Input_data']['lineLabels_list']
+        inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
+        ion_array, wave_array, latexLabel_array = label_decomposition(inputLabels, combined_dict=combined_dict)
+
+        # Output data
+        flux_matrix = db_dict['trace']['calcFluxes_Op']
+        median_values = np.median(flux_matrix, axis=0)
 
         # Declare plot grid size
-        n_columns = 8
-        n_lines = len(lines_list)
+        n_lines = len(inputLabels)
         n_rows = int(np.ceil(float(n_lines)/float(n_columns)))
 
         # Declare figure format
@@ -911,39 +963,32 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         axes = axes.ravel()
 
         # Generate the color dict
-        obsIons = np.unique(ions_list)
+        obsIons = np.unique(ion_array)
         colorNorm, cmap = self.gen_colorList(0, obsIons.size)
         colorDict = dict(zip(obsIons, np.arange(obsIons.size)))
-
-        # Flux statistics
-        traces_array = db_dict[function_key]
-        median_values = median(db_dict[function_key], axis=0)
-        p16th_fluxes = percentile(db_dict[function_key], 16, axis=0)
-        p84th_fluxes = percentile(db_dict[function_key], 84, axis=0)
 
         # Plot individual traces
         for i in range(n_lines):
 
             # Current line
-            label = lines_list[i]
-            ion = ions_list[i]
-            trace = traces_array[:, i]
+            label = inputLabels[i]
+            ion = ion_array[i]
+            trace = flux_matrix[:, i]
             median_flux = median_values[i]
 
             label_mean = 'Mean value: {}'.format(np.around(median_flux, 4))
             axes[i].hist(trace, histtype='stepfilled', bins=35, alpha=.7, color=cmap(colorNorm(colorDict[ion])), density=False)
 
-            if obsFluxes is not None:
-                true_value, fitErr = obsFluxes[i], obsErr[i]
-                label_true = 'True value: {}'.format(np.around(true_value, 3))
-                axes[i].axvline(x=true_value, label=label_true, color='black', linestyle='solid')
-                axes[i].axvspan(true_value - fitErr, true_value + fitErr, alpha=0.5, color='grey')
-                axes[i].get_yaxis().set_visible(False)
-                axes[i].set_yticks([])
+            label_true = 'True value: {}'.format(np.around(inFlux[i], 3))
+            axes[i].axvline(x=inFlux[i], label=label_true, color='black', linestyle='solid')
+            axes[i].axvspan(inFlux[i] - inErr[i], inFlux[i] + inErr[i], alpha=0.5, color='grey')
+            axes[i].get_yaxis().set_visible(False)
+            axes[i].set_yticks([])
 
             # Plot wording
-            if lineLabels is not None:
-                axes[i].set_title(r'{}'.format(lineLabels[i]))
+            axes[i].set_title(latexLabel_array[i])
+
+        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
 
         return
 
@@ -1063,57 +1108,51 @@ class MCOutputDisplay(FigConf, PdfPrinter):
     def table_mean_outputs(self, table_address, db_dict, true_values=None, idx_region = 0):
 
         # Table headers
+        headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
+                   r'$16^{th}$ percentil', r'$84^{th}$ percentil']
+
         if true_values is not None:
-            headers = ['Parameter', 'True value', 'Mean', 'Standard deviation', 'Number of points', 'Median',
-                       r'$16^{th}$ percentil', r'$84^{th}$ percentil', r'Difference $\%$']
-        else:
-            headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
-                       r'$16^{th}$ percentil', r'$84^{th}$ percentil']
+            headers.insert(1, 'True value')
+            headers.append(r'Difference $\%$')
 
-        ext_region = f'_{idx_region}'
-        tableDF = pd.DataFrame(columns=headers[1:])
-
-        # Generate pdf
+        # Generate containers
         self.create_pdfDoc(table_address, pdf_type='table')
         self.pdf_insert_table(headers)
+        tableDF = pd.DataFrame(columns=headers[1:])
 
         # Loop around the parameters
-        parameters_list = list(db_dict.keys())
-
+        parameters_list = list(db_dict['Fitting_results'].keys())
         for param in parameters_list:
 
-            if ('_Op' not in param) and param not in ['w_i']:
+            if '_Op' not in param:
 
-                # Label for the plot
-                label       = latex_labels[param.replace('_0','')]
-                mean_value  = np.mean(db_dict[param])
-                std         = np.std(db_dict[param])
-                n_traces    = db_dict[param].size
-                median      = np.median(db_dict[param])
-                p_16th      = np.percentile(db_dict[param], 16)
-                p_84th      = np.percentile(db_dict[param], 84)
+                trace_i = db_dict['trace'][param]
+
+                label = latex_labels[param]
+                mean_value = np.mean(trace_i)
+                std = np.std(trace_i)
+                n_traces = trace_i.size
+                median = np.median(trace_i)
+                p_16th = np.percentile(trace_i, 16)
+                p_84th = np.percentile(trace_i, 84)
 
                 true_value, perDif = 'None', 'None'
-                param_ref = param.replace(ext_region, '')
 
                 if true_values is not None:
-                    if param_ref in true_values:
-                        value_param = true_values[param_ref]
+                    if param in true_values:
+                        value_param = true_values[param]
                         if isinstance(value_param, (list, tuple, np.ndarray)):
-                            true_value = value_param[0]
+                            true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
+                            perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
+
                         else:
                             true_value = value_param
-
-                        perDif = str(np.round((1 - (true_value / median)) * 100, 2))
+                            perDif = str(np.round((1 - (true_value / median)) * 100, 2))
 
                     row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
-                    # self.addTableRow([label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif],
-                    #                  last_row=False if parameters_list[-1] != param else True)
 
                 else:
                     row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
-                    # self.addTableRow([label, mean_value, std, n_traces, median, p_16th, p_84th],
-                    #                  last_row=False if parameters_list[-1] != param else True)
 
                 self.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
                 tableDF.loc[row_i[0]] = row_i[1:]
@@ -1128,43 +1167,44 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def table_line_fluxes(self, table_address, db_dict, lines_list, obsFlux=None, obsErr=None):
-
-        # Generate pdf
-        self.create_pdfDoc(table_address, pdf_type='table')
+    def table_line_fluxes(self, table_address, db_dict, combined_dict={}):
 
         # Table headers
-        headers = ['Line Label', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
+        headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
                    r'$84^{th}$ $percentil$', r'$Difference\,\%$']
 
+        # Create containers
         tableDF = pd.DataFrame(columns=headers[1:])
-
+        self.create_pdfDoc(table_address, pdf_type='table')
         self.pdf_insert_table(headers)
 
-        # Data for table
-        true_values = ['None'] * len(lines_list) if obsFlux is None else obsFlux
-        mean_line_values = db_dict['calcFluxes_Op'].mean(axis=0)
-        std_line_values = db_dict['calcFluxes_Op'].std(axis=0)
-        median_line_values = median(db_dict['calcFluxes_Op'], axis=0)
-        p16th_line_values = percentile(db_dict['calcFluxes_Op'], 16, axis=0)
-        p84th_line_values = percentile(db_dict['calcFluxes_Op'], 84, axis=0)
+        # Input data
+        inputLabels = db_dict['Input_data']['lineLabels_list']
+        inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
+
+        # Output data
+        flux_matrix = db_dict['trace']['calcFluxes_Op']
+        mean_line_values = flux_matrix.mean(axis=0)
+        std_line_values = flux_matrix.std(axis=0)
+        median_line_values = np.median(flux_matrix, axis=0)
+        p16th_line_values = np.percentile(flux_matrix, 16, axis=0)
+        p84th_line_values = np.percentile(flux_matrix, 84, axis=0)
 
         # Array wih true error values for flux
-        if obsFlux is None:
-            diff_Percentage = ['None'] * len(lines_list)
-        else:
-            diff_Percentage = np.round((1 - (median_line_values / true_values)) * 100, 2)
-            diff_Percentage = list(map(str, diff_Percentage))
+        diff_Percentage = np.round((1 - (median_line_values / inFlux)) * 100, 2)
+        diff_Percentage = list(map(str, diff_Percentage))
 
-        for i in range(len(lines_list)):
+        ion_array, wave_array, latexLabel_array = label_decomposition(inputLabels, combined_dict=combined_dict)
 
-            label = label_formatting(lines_list[i])
+        for i in range(inFlux.size):
 
-            row_i = [label, true_values[i], mean_line_values[i], std_line_values[i], median_line_values[i], p16th_line_values[i],
+            # label = label_formatting(inputLabels[i])
+
+            row_i = [latexLabel_array[i], inFlux[i], mean_line_values[i], std_line_values[i], median_line_values[i], p16th_line_values[i],
                      p84th_line_values[i], diff_Percentage[i]]
 
-            self.addTableRow(row_i, last_row=False if lines_list[-1] != lines_list[i] else True)
-            tableDF.loc[lines_list[i]] = row_i[1:]
+            self.addTableRow(row_i, last_row=False if inputLabels[-1] != inputLabels[i] else True)
+            tableDF.loc[inputLabels[i]] = row_i[1:]
 
         self.generate_pdf(clean_tex=True)
 
