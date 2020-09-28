@@ -61,7 +61,7 @@ def spectrum(wave, flux, continuumFlux=None, obsLinesTable=None, matchedLinesDF=
     return
 
 
-def image_frame(flux, wcs=None, slices=('y', 'x', 1), fig=None, ax=None, fig_conf={}, axes_conf={}):
+def image_frame(flux, wcs=None, slices=('y', 'x', 1), fig=None, ax=None, fig_conf={}, axes_conf={}, output_file=None):
 
     # Plot Configuration
     defaultConf = STANDARD_PLOT.copy()
@@ -91,7 +91,11 @@ def image_frame(flux, wcs=None, slices=('y', 'x', 1), fig=None, ax=None, fig_con
     ax.imshow(np.log10(flux_contours), vmin=np.log10(lower_limit))
     # ax.contour(X, Y, np.log10(flux_contours), vmin=np.log10(lower_limit), cmap=plt.cm.inferno)
     ax.update(axes_conf)
-    plt.show()
+
+    if output_file is None:
+        plt.show()
+    else:
+        plt.savefig(output_file, bbox_inches='tight')
 
     return
 

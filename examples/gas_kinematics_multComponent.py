@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import astropy.io.fits as astrofits
 from pathlib import Path
-from src.specsiser.physical_model.line_tools import LineMeasurer, gauss_func
+from src.specsiser.physical_model.line_tools import EmissionFitting, gauss_func
 from matplotlib import pyplot as plt, rcParams
 from inference_model import displaySimulationData
 
@@ -37,7 +37,7 @@ def mixture_density_mult(w, mu, sd, x):
 
 
 # Line treatment object
-lm = LineMeasurer()
+lm = EmissionFitting()
 
 # Declare data
 data_folder, data_file = Path('D:/Dropbox/Astrophysics/Data/WHT-Ricardo/'), 'COMBINED_blue.0001.fits'

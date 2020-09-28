@@ -3,18 +3,30 @@ import numpy as np
 import configparser
 import pandas as pd
 import pickle
+import copy
 from errno import ENOENT
 from scipy.interpolate import interp1d
 from distutils.util import strtobool
 from collections import Sequence
 from pathlib import Path
 from data_printing import int_to_roman, label_decomposition
+
 __all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
            'parseConfDict', 'parseConfList']
 
 
 CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
 STRINGCONFKEYS = ['sampler', 'reddenig_curve', 'norm_line_label', 'norm_line_pynebCode']
+GLOBAL_LOCAL_GROUPS = ['_line_fitting']
+
+
+# Function to check if variable can be converte to float else leave as string
+def check_numeric_Value(s):
+    try:
+        output = float(s)
+        return output
+    except ValueError:
+        return s
 
 
 # Function to import configuration data
@@ -80,7 +92,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
         output_variable = None
 
     # Dictionary blended lines
-    elif '_blended_lines' in section_label:
+    elif '_line_fitting' in section_label:
         output_variable = {}
         keys_and_values = entry_value.split(',')
         for pair in keys_and_values:
@@ -99,7 +111,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
 
             # Conversion for non-parameter class atributes (only str conversion possible)
             else:
-                output_variable = entry_value
+                output_variable = check_numeric_Value(entry_value)
 
     # Arrays (The last boolean overrides the parameters # TODO unstable in case of one item lists
     elif ',' in entry_value:
@@ -136,15 +148,19 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
     elif '_check' in key_label:
         output_variable = strtobool(entry_value) == 1
 
-    # Floats
-    elif (key_label not in STRINGCONFKEYS) and ('_folder' not in key_label) and ('_file' not in key_label) and \
-            ('_list' not in key_label) and ('_b_components' not in key_label) and section_label not in ['blended_groups', 'merged_groups']:
-
-        output_variable = float(entry_value)
-
-    # Strings
-    else:
+    # Standard strings
+    elif ('_folder' in key_label) or ('_file' in key_label) or ('_list' in key_label):
         output_variable = entry_value
+
+    # elif (key_label not in STRINGCONFKEYS) and ('_folder' not in key_label) and ('_file' not in key_label) and \
+    #         ('_list' not in key_label) and ('_b_components' not in key_label) and section_label not in ['blended_groups', 'merged_groups']:
+    #
+    #     output_variable = float(entry_value)
+
+    # Check if numeric possible else string
+    else:
+        output_variable = check_numeric_Value(entry_value)
+
 
     return output_variable
 
@@ -203,7 +219,7 @@ def check_missing_flux_values(flux):
 
 
 # Function to import SpecSyzer configuration file #TODO repeated
-def loadConfData(filepath, objName=None, group_variables=True):
+def loadConfData(filepath, objList=None, group_variables=True):
 
     # Open the file
     cfg = importConfigFile(filepath)
@@ -225,6 +241,7 @@ def loadConfData(filepath, objName=None, group_variables=True):
             confDict[key] = formatStringEntry(value, key)
 
     else:
+
         # Loop through configuration file sections and merge into a dictionary
         confDict = {}
 
@@ -234,6 +251,18 @@ def loadConfData(filepath, objName=None, group_variables=True):
             for option_key in cfg.options(section):
                 option_value = cfg[section][option_key]
                 confDict[section][option_key] = formatStringEntry(option_value, option_key, section)
+
+        # Combine sample with obj properties if available
+        if objList is not None:
+            for key_group in GLOBAL_LOCAL_GROUPS:
+                global_group = f'default{key_group}'
+                if global_group in confDict:
+                    for objname in objList:
+                        local_group = f'{objname}{key_group}'
+                        dict_global = copy.deepcopy(confDict[global_group])
+                        if local_group in confDict:
+                            dict_global.update(confDict[local_group])
+                        confDict[local_group] = dict_global
 
     return confDict
 

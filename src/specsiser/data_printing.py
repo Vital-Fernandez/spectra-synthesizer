@@ -116,6 +116,7 @@ def label_decomposition(lineList, recombAtoms=('H1', 'He1', 'He2'), combined_dic
                 latex_label += comp_Label
             else:
                 latex_label += '+' + comp_Label
+
         ion_array[idx], wave_array[idx], latexLabel_array[idx] = ion, float(wavelength), '$'+latex_label+'$'
 
     return ion_array, wave_array, latexLabel_array

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.specsiser.physical_model.line_tools import LineMeasurer, gauss_func
+from src.specsiser.physical_model.line_tools import EmissionFitting, gauss_func
 from matplotlib import pyplot as plt, rcParams
 
 # Get data
@@ -17,7 +17,7 @@ redshift = 1.0046
 wave, flux = np.loadtxt(file_to_open, unpack=True)
 wave, flux = wave/redshift, flux * 1e-20
 
-lm = LineMeasurer(wave, flux)
+lm = EmissionFitting(wave, flux)
 
 # Remove the continuum
 flux_noContinuum = lm.continuum_remover(noiseWaveLim=(5600, 5850))
@@ -48,7 +48,7 @@ for i in np.arange(obsLines.size):
     lm.line_properties(idcsLinePeak, idcsContinua, bootstrap_size=500)
 
     # Perform gaussian fitting
-    lm.gaussian_mcfit(idcsLinePeak, idcsContinua, bootstrap_size=500)
+    lm.gauss_mcfit(idcsLinePeak, idcsContinua, bootstrap_size=500)
 
     # Store results in database
     lm.results_to_database(lineLabel, linesDb)
