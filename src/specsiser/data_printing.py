@@ -102,8 +102,13 @@ def label_decomposition(lineList, recombAtoms=('H1', 'He1', 'He2'), combined_dic
         for line_i in lineComponents:
 
             ion = line_i[0:line_i.find('_')]
-            wavelength = line_i[line_i.find('_') + 1:-1]
-            units = '\AA' if line_i[-1] == 'A' else 'NoUnit'
+            if 'A_' in line_i:
+                wavelength = line_i[line_i.find('_') + 1:-4]
+            else:
+                wavelength = line_i[line_i.find('_') + 1:-1]
+
+            units = '\AA'
+
             atom, ionization = ion[:-1], int(ion[-1])
             ionizationRoman = int_to_roman(ionization)
 

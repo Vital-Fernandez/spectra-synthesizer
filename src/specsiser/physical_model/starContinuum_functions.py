@@ -7,9 +7,7 @@ from scipy.optimize import nnls
 from shutil import copyfile
 from os import chdir
 from subprocess import Popen, PIPE, STDOUT
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
-from matplotlib import colors, cm
+from matplotlib import pyplot as plt, rcParams, colors, cm, ticker
 
 
 # Reddening law from CCM89 # TODO Replace this methodology to an Import of Pyneb
@@ -422,13 +420,17 @@ class StarlightWrapper:
         ax.update(labelsDict)
         ax.legend()
         ax.set_yscale('log')
-        plt.savefig(outputFileAddress, bbox_inches='tight')
-        plt.show()
-        # fig.clear()
+
+        if outputFileAddress is None:
+            plt.show()
+        else:
+            plt.savefig(outputFileAddress, bbox_inches='tight')
+
+        fig.clear()
 
         return
 
-    def population_fraction_plots(self, fit_output, objName, parameter, ouputFileAddress, redshift=None):
+    def population_fraction_plots(self, fit_output, objName, parameter, ouputFileAddress, mass_galaxy=None):
 
         # Extract the data from the starlight output
         index, x_j, Mini_j, Mcor_j, age_j, Z_j, LbyM, Mstars = fit_output['index'], fit_output['x_j'], fit_output['Mini_j'],\
@@ -437,22 +439,26 @@ class StarlightWrapper:
 
         x_j, age_j, Mcor_j, Z_j = np.array(x_j), np.array(age_j), np.array(Mcor_j), np.array(Z_j)
 
-        # Compute galaxy mass
-        if redshift is not None:
-            LogMass = Calculate_Total_Mass(fit_output['mass_starlight'], fit_output, redshift)
-
         # Establish configuration for either mass or light fraction plots
         if parameter == 'Light_fraction':
-            labelsDict = {'xlabel': r'$log(Age)$',
-                          'ylabel': r'Light fraction %$',
-                          'title': f'Galaxy {objName} SSP synthesis light fraction'}
             fraction_param = x_j
+            labelsDict = {'xlabel': r'$log(Age)$',
+                          'ylabel': r'Light fraction %',
+                          'title': f'Galaxy {objName}' + '\nLight fraction'}
 
         elif parameter == 'Mass_fraction':
-            labelsDict = {'xlabel': r'$log(Age)$',
-                          'ylabel': r'Mass fraction %$',
-                          'title': f'Galaxy {objName} SSP synthesis mass fraction'}
             fraction_param = Mcor_j
+            labelsDict = {'xlabel': r'$log(Age)$',
+                          'ylabel': r'Mass fraction %',
+                          'title': f'Galaxy {objName}' + '\nMass fraction'}
+
+            if mass_galaxy is not None:
+                labelsDict['title'] = f'Galaxy {objName}'\
+                                     + '\n' \
+                                     + r'mass fraction $Log(M_{{\star}})={:.2f}$'.format(mass_galaxy)#
+
+        else:
+            print(f'-- ERROR: Fraction parameter: {parameter} not recognize use "Mass_fraction" or "Light_fraction"')
 
         # Get metallicities from calculation
         zValues = np.sort(np.array(np.unique(Z_j)))
@@ -460,56 +466,98 @@ class StarlightWrapper:
         # Get color list for metallicities
         self.gen_colorList(0, len(zValues))
 
-        # Define age bins width
-        log_agej = np.log10(age_j)
-        ageBins_HW = 0.10
-        log_ageBins = np.arange(4.80, 10.60, ageBins_HW)
+        # Plot format
+        plotConf = {'axes.titlesize': 18, 'axes.labelsize': 16, 'legend.fontsize': 14, 'xtick.labelsize': 14,
+                    'ytick.labelsize': 16}
+        rcParams.update(plotConf)
 
         # Plot the age bins per metallicity:
         fig, ax = plt.subplots(figsize=(9, 9))
 
-        for log_t in log_ageBins:
+        # Populations which contribute to the fraction
+        idx_param = (fraction_param >= 1.00)
 
-            idx_age = (log_agej >= log_t - ageBins_HW / 2) & (log_agej <= log_t + ageBins_HW / 2)
-            idx_param = (fraction_param > 0.0)
-            idx_total = idx_age & idx_param
+        # Get age of valid stellar populations
+        ageBins_HW = 0.20
+        log_agej = np.log10(age_j)
+        log_ageBins = np.linspace(4.80, 10.60, 30)
+        log_age_array = log_agej[idx_param]
+        idcs_age_bins_array = np.digitize(log_age_array, log_ageBins) - 1
 
-            # Check populatioins were found
-            if np.sum(idx_total) > 1:
+        # Assign age bin to those populations
+        idcs_sort = np.argsort(idcs_age_bins_array)
+        idx_idcs_age_bins_sort = idcs_age_bins_array[idcs_sort]
+        ics_bins = np.unique(idx_idcs_age_bins_sort)
+        bins = log_ageBins[ics_bins]
 
-                # Load x and y data for the plot
-                z_array = Z_j[idx_total]
-                param_array = fraction_param[idx_total]
+        for i_bin, bin in enumerate(bins):
 
-                # Sort by decreasing param value
-                idx_sort = np.argsort(param_array)[::-1]
-                z_sort = z_array[idx_sort]
-                param_sort = param_array[idx_sort]
+            idx_total = log_ageBins[idcs_age_bins_array] == bin
 
-                # Plot the individual bars
-                for i in range(len(param_sort)):
-                    x, y = log_t, param_sort[i]
-                    label = 'Z = {}'.format(z_sort[i])
-                    idx_color = np.where(zValues == z_sort[i])[0][0]
-                    color = self.get_color(idx_color)
-                    ax.bar(x, y, label=label, color=color, width=ageBins_HW / 2, fill=True, edgecolor=color,
-                                  log=True)
+            # Load x and y data for the plot
+            z_array = Z_j[idx_param][idx_total]
+            param_array = fraction_param[idx_param][idx_total]
 
-                # Plot age bin total
-                param_total = sum(param_array)
-                ax.bar(log_t, param_total, label='Age bin total', width=ageBins_HW, fill=False,
-                              edgecolor='black', linestyle='--', log=True)
+            # Combine by metallicities of same values:
+            z_unique = np.unique(z_array)
+            param_sort = np.zeros(z_unique.size)
+            for i_z, z_value in enumerate(z_unique):
+                idcs_z = (z_array == z_value)
+                param_sort[i_z] = param_array[idcs_z].sum()
+
+            # Sort by decreasing param value
+            idx_sort = np.argsort(param_sort)[::-1]
+            z_sort = z_unique[idx_sort]
+            param_sort = param_sort[idx_sort]
+
+            x = bin
+
+            # Plot the individual bars
+            for i in range(len(param_sort)):
+                y = param_sort[i]
+
+                # Compute the metallicity star contribution
+                z_mag = z_sort[i]
+                idx_z_mag = [Z_j == z_mag]
+                z_total = fraction_param[idx_z_mag].sum()
+
+                label = f'Z = {z_sort[i]} (total {z_total:.1f} %)'
+
+                idx_color = np.where(zValues == z_sort[i])[0][0]
+                color = self.get_color(idx_color)
+                ax.bar(x, y, label=label, color=color, width=ageBins_HW/2, fill=True, edgecolor=color, log=True)
+
+            # Plot age bin total
+            param_total = sum(param_array)
+            ax.bar(x, param_total, label='Age bin total', width=ageBins_HW, fill=False,
+                          edgecolor='black', linestyle='--', log=True)
 
         # Change the axis format to replicate the style of Dani Miralles
-        # ax.set_yscale('log')
-        ax.set_ylim([0, 100])
+        ax.set_ylim([1.0, 100])
         ax.set_xlim([5.5, 10.5])
-        ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2f'))
-        ax.legend()
-        ax.update(labelsDict)
-        # plt.show()
+        ax.set_yscale('log')
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
 
-        plt.savefig(ouputFileAddress, bbox_inches='tight')
+        # Legend configuration
+        # Security checks to avoid empty legends
+        if ax.get_legend_handles_labels()[1] != None:
+
+            if len(ax.get_legend_handles_labels()[1]) != 0:
+                Old_Handles, Old_Labels = ax.get_legend_handles_labels()
+
+                # Actual sorting
+                labels, handles = zip(*sorted(zip(Old_Labels, Old_Handles), key=lambda t: t[0]))
+                Handles_by_Label = OrderedDict(zip(labels, handles))
+                ax.legend(Handles_by_Label.values(), Handles_by_Label.keys(), loc='best', ncol=1)
+
+        # Format titles
+        ax.update(labelsDict)
+        if ouputFileAddress is None:
+            plt.show()
+        else:
+            plt.savefig(ouputFileAddress, bbox_inches='tight')
+
+        # Clear the image
         fig.clear()
 
         return

@@ -15,8 +15,9 @@ from matplotlib import pyplot as plt, rcParams
 from scipy import stats, optimize, integrate
 from data_reading import label_decomposition
 from pathlib import Path
+from src.specsiser.data_printing import PdfPrinter
 
-STANDARD_PLOT = {'figure.figsize': (20, 14),
+STANDARD_PLOT = {'figure.figsize': (14, 7),
                  'axes.titlesize': 14,
                  'axes.labelsize': 14,
                  'legend.fontsize': 12,
@@ -61,6 +62,9 @@ PARAMS_CONVERSION = {'lineIntgFlux': 'intg_flux',
 
 VAL_LIST = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
 SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]
+
+FLUX_TEX_TABLE_HEADERS = [r'$Transition$', '$EW(\AA)$', '$F(\lambda)$', '$I(\lambda)$']
+FLUX_TXT_TABLE_HEADERS = [r'$Transition$', 'EW', 'EW_error', 'F(lambda)', 'F(lambda)_error', 'I(lambda)', 'I(lambda)_error']
 
 
 def leave_axes(event):
@@ -174,12 +178,52 @@ def int_to_roman(num):
     return roman_num
 
 
+def lineslogFile_to_DF(lineslog_address):
+    '''
+    This function includes serveral techniques to import an excel or text file lines log as a dataframe
+    :param lineslog_address:
+    :return:
+    '''
+
+    # Text files
+    try:
+        lineslogDF = pd.read_csv(lineslog_address, delim_whitespace=True, header=0, index_col=0)
+    except:
+
+        try:
+            lineslogDF = pd.read_excel(lineslog_address, sheet_name=0, header=0, index_col=0)
+        except:
+            print(f'- ERROR: Could not open lines log at: {lineslog_address}')
+
+    return lineslogDF
+
+
+def redshift_calculation(obs_array, emis_array, unit='wavelength', verbose=False):
+
+    if unit == 'wavelength':
+        z_array = obs_array/emis_array - 1
+    elif unit == 'frequency':
+        z_array = emis_array/obs_array - 1
+    else:
+        print(f'- ERROR: Units {unit} for redshift calculation no understood')
+
+    if verbose:
+        print(f'Redshift per line: {z_array}')
+        print(f'Mean redshift: {z_array.mean()} {z_array.std()}')
+
+    return z_array.mean(), z_array.std()
+
+
+def wavelength_to_vel(wave, wave_ref, c=299792.458):
+    return c * (wave/wave_ref)
+
+
 class EmissionFitting:
 
     """Class to to measure emission line fluxes and fit them as gaussian curves"""
     # TODO Add logic for very small lines
 
-    _wave, _flux = None, None
+    _wave, _flux, _errFlux = None, None, None
     _peakWave, _peakInt = None, None
     _pixelWidth = None
     _lineIntgFlux, _lineIntgErr = None, None
@@ -190,11 +234,11 @@ class EmissionFitting:
     _m_continuum, _n_continuum = None, None
     _p1, _p1_Err = None, None
     _fit_params, _fit_output = {}, None
-    _blended_check = False
+    _blended_check, _mixtureComponents = False, None
 
     def __init__(self):
 
-        self.wave, self.flux = self._wave, self._flux
+        self.wave, self.flux, self.errFlux = self._wave, self._flux, self._errFlux
         self.peakWave, self.peakInt = self._peakWave, self._peakInt
         self.pixelWidth = self._pixelWidth
         self.lineIntgFlux, self.lineIntgErr = self._lineIntgFlux, self._lineIntgErr
@@ -205,7 +249,7 @@ class EmissionFitting:
         self.m_continuum, self.n_continuum = self._m_continuum, self._n_continuum
         self.p1, self.p1_Err = self._p1, self._p1_Err
         self.fit_params, self.fit_output = self._fit_params, self._fit_output
-        self.blended_check = self._blended_check
+        self.blended_check, self.mixtureComponents = self._blended_check, self._mixtureComponents
 
         return
 
@@ -303,86 +347,24 @@ class EmissionFitting:
 
         return
 
-    def line_fit(self, algorithm, lineLabel, idcs_line, idcs_continua, bootstrap_size=500, continuum_check=None,
-                 wide_comp=None, user_conf={}):
+    def line_fit(self, algorithm, lineLabel, idcs_line, idcs_continua, iter_n=500, user_conf={}):
 
         # Check if lines belong to blended group
-        mixture_check = False
-        if '_b' in lineLabel:
-            b_order = user_conf[lineLabel]
-            self.blended_check = True
-        else:
-            b_order = lineLabel
+        self.blended_check = True if '_b' in lineLabel else False
+        lineRef = user_conf[lineLabel] if self.blended_check else lineLabel
+
+        # Define x and y values according to line regions
 
         # Apply fitting model
         if algorithm == 'mc':
-            self.p1, self.p1_Err, self.lineGaussFlux, self.lineGaussErr = self.gauss_mcfit(idcs_line, idcs_continua,
-                                                                                           bootstrap_size)
+            self.gauss_mcfit(idcs_line, idcs_continua, iter_n)
 
         if algorithm == 'lmfit':
-            self.fit_output = self.gauss_lmfit(lineLabel, idcs_line, idcs_continua, continuum_check, b_order, wide_comp,
-                                               user_conf)
-
-            # Establish number of gaussians
-            mixture_list = np.array(b_order.split('-'), ndmin=1)
-            n_comps = mixture_list.size
-
-            # Generate containers
-            self.p1, self.p1_Err = np.empty((3, n_comps)), np.empty((3, n_comps))
-            self.lineGaussFlux, self.lineGaussErr = np.empty(n_comps), np.empty(n_comps)
-            self.eqw, self.eqwErr = np.empty(n_comps), np.empty(n_comps)
-
-            # Process fit output
-            for i, line in enumerate(mixture_list):
-                for j, param in enumerate(['_height', '_center', '_sigma']):
-                    param_fit = self.fit_output.params[line + param]
-                    self.p1[j, i], self.p1_Err[j, i] = param_fit.value, param_fit.stderr
-                lineArea = self.fit_output.params[f'{line}_amplitude']
-                self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, lineArea.stderr
-                self.eqw[i], self.eqwErr[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
-
-        # # Store the results from blended line (only working for lmfit)
-        # else:
-        #
-        #     # First save the integrated parameters of the blended group
-        #     print('-- Blended line', lineLabel)
-        #
-        #     # Proceed to store each individual component
-        #     blended_list = b_order.split('-')
-        #     blended_list = blended_list if wide_comp is None else blended_list + [wide_comp]
-        #
-        #     for line_i in blended_list:
-        #
-        #         p1, p1_Err = np.empty(3), np.empty(3)
-        #
-        #         for idx, param in enumerate(['_height', '_center', '_sigma']):
-        #             param_fit = self.fit_output.params[line_i + param]
-        #             p1[idx], p1_Err[idx] = param_fit.value, param_fit.stderr
-        #
-        #         lineArea = self.fit_output.params[f'{line_i}_amplitude']  # BUG in lmfit amplitude is the area
-        #
-        #         self.p1, self.p1_Err = p1, p1_Err
-        #         self.lineGaussFlux, self.lineGaussErr = lineArea.value, lineArea.stderr
-        #         self.eqw, self.eqwErr = self.lineGaussFlux/self.cont, self.lineGaussErr/self.cont
-        #
-        #         self.label_formatter(line_i)
-        #
-        #         # Add new entries to table
-        #         line_conf = {'wavelength': float(line_i[line_i.find('_') + 1:-1]),
-        #                      'latexLabel': self.label_formatter(line_i),
-        #                      'w1': self.linesDF.loc[lineLabel, 'w1'],
-        #                      'w2': self.linesDF.loc[lineLabel, 'w2'],
-        #                      'w3': self.linesDF.loc[lineLabel, 'w3'],
-        #                      'w4': self.linesDF.loc[lineLabel, 'w4'],
-        #                      'w5': self.linesDF.loc[lineLabel, 'w5'],
-        #                      'w6': self.linesDF.loc[lineLabel, 'w6'],
-        #                      'blended': b_order,
-        #                      'observation': 'detected'}
-        #         self.results_to_database(line_i, self.linesDF, **line_conf)
+            self.gauss_lmfit(lineRef, idcs_line, idcs_continua, user_conf)
 
         return
 
-    def gauss_mcfit(self, idcs_line, idcs_continua, bootstrap_size=1000):
+    def gauss_mcfit(self, idcs_line, bootstrap_size=1000):
 
         # Get regions data
         lineWave, lineFlux = self.wave[idcs_line], self.flux[idcs_line]
@@ -420,64 +402,81 @@ class EmissionFitting:
             p1, p1_Err = np.array([np.nan, np.nan, np.nan]), np.array([np.nan, np.nan, np.nan])
             y_gauss, y_gaussErr = np.nan, np.nan
 
-        return p1, p1_Err, y_gauss, y_gaussErr
+        self.p1, self.p1_Err, self.lineGaussFlux, self.lineGaussErr = p1, p1_Err, y_gauss, y_gaussErr
 
-    def gauss_lmfit(self, lineLabel, idcs_line, idcs_continua, continuum_check=True, narrow_comp=None, wide_comp=None,
-                    user_conf={}):
-        # FIXME in lmfit amplitude is the area
+        return
+
+    def gauss_lmfit(self, line_label, idcs_line, idcs_continua, user_conf={}):
+
         """
-        :param lineLabel:
+        :param line_label:
         :param idcs_line:
         :param idcs_continua:
         :param continuum_check:
-        :param wide_components:
-        :param params_conf: Input dictionary with specific fit configuration {name , value, vary, min, max, expr,
+        :param narrow_comp:
+        :param user_conf: Input dictionary with specific fit configuration {name , value, vary, min, max, expr,
         brute_step}. The model parameters ['slope', 'intercept', 'amplitude', 'center', 'sigma', 'fwhm', 'height'].
         The configuration of each parameter (NAME VALUE VARY MIN  MAX  EXPR  BRUTE_STEP)
         :return:
         """
 
-        # Confirm the number of gaussian components
-        narrow_comp = lineLabel if narrow_comp is None else narrow_comp
-        narrow_components = narrow_comp.split('-')
-
-        # Function storing parameter values
-        fit_function = None
         self.fit_params = Parameters()
 
-        # Linear continuum
-        if continuum_check:
-            continuumModel = LinearModel(prefix='cont_')
-            define_lmfit_param(self.fit_params, 'cont_slope', self.m_continuum, user_conf)
-            define_lmfit_param(self.fit_params, 'cont_intercept', self.n_continuum, user_conf)
-            fit_function = continuumModel
+        # Confirm the number of gaussian components
+        self.mixtureComponents = np.array(line_label.split('-'), ndmin=1)
+        n_comps = self.mixtureComponents.size
 
-        # Narrow gaussians
-        for idx_n, comp in enumerate(narrow_components):
+        # Linear continuum component
+        continuumModel = LinearModel(prefix='cont_')
+        define_lmfit_param(self.fit_params, 'cont_slope', self.m_continuum, user_conf)
+        define_lmfit_param(self.fit_params, 'cont_intercept', self.n_continuum, user_conf)
+        fit_function = continuumModel
+
+        # Line gaussian component
+        for idx_n, comp in enumerate(self.mixtureComponents):
             narrowModel = GaussianModel(prefix=comp + '_')
             define_lmfit_param(self.fit_params, f'{comp}_amplitude', self.peakInt, user_conf)
             define_lmfit_param(self.fit_params, f'{comp}_center', self.peakWave, user_conf)
             define_lmfit_param(self.fit_params, f'{comp}_sigma', 1, user_conf)
             self.fit_params.add(f'{comp}_height', expr=f'0.3989423 * {comp}_amplitude / {comp}_sigma')
-            fit_function = narrowModel if fit_function is None else fit_function + narrowModel
+            fit_function += narrowModel
 
-        # Wide gaussian
-        if wide_comp is not None:
-            wideModel = GaussianModel(prefix=wide_comp + '_')
-            define_lmfit_param(self.fit_params, f'{wide_comp}_amplitude', None, user_conf)
-            define_lmfit_param(self.fit_params, f'{wide_comp}_center', None, user_conf)
-            define_lmfit_param(self.fit_params, f'{wide_comp}_sigma', None, user_conf)
-            define_lmfit_param(self.fit_params, f'{wide_comp}_height', user_conf={'expr': f'0.3989423 * {wide_comp}_amplitude / {wide_comp}_sigma'})
-            self.fit_params.add(f'{wide_comp}_height', expr=f'0.3989423 * {wide_comp}_amplitude / {wide_comp}_sigma')
-            fit_function += wideModel
+        # Only use line region if adjacent continua is not included in fitting
+        if (self.fit_params['cont_slope'].vary is False) and (self.fit_params['cont_slope'].vary is False):
+            idcsFit = idcs_line
+        else:
+            idcsFit = idcs_line + idcs_continua
 
-        # Combine the line and continuum region in the fitting in cases the continuum is included
-        idcs_fit = idcs_line + idcs_continua if continuum_check else idcs_line
+        # Establish error spectrum:
+        if self.errFlux is None:
+            errLine = np.full(idcsFit.sum(), fill_value=1.0/self.std_continuum)#1.0/np.power(self.std_continuum, 2))
+        else:
+            errLine = self.errFlux[idcsFit]
 
         # Fit the line
-        fitOutput = fit_function.fit(self.flux[idcs_fit], self.fit_params, x=self.wave[idcs_fit])
+        self.fit_output = fit_function.fit(self.flux[idcsFit], self.fit_params, x=self.wave[idcsFit], weights=errLine)
 
-        return fitOutput
+        # Fit line with emcee
+        # errLine = None
+        # emcee_kws = dict(steps=5000, burn=1000, is_weighted=False, progress=False)
+        # self.fit_output = fit_function.fit(data=self.flux[idcsFit], x=self.wave[idcsFit], params=self.fit_params,
+        #                                    method='emcee', nan_policy='omit', fit_kws=emcee_kws)
+
+        # Generate containers for the results
+        self.eqw, self.eqwErr = np.empty(n_comps), np.empty(n_comps)
+        self.p1, self.p1_Err = np.empty((3, n_comps)), np.empty((3, n_comps))
+        self.lineGaussFlux, self.lineGaussErr = np.empty(n_comps), np.empty(n_comps)
+
+        # Process lmfit container
+        for i, line in enumerate(self.mixtureComponents):
+            for j, param in enumerate(['_height', '_center', '_sigma']):
+                param_fit = self.fit_output.params[line + param]
+                self.p1[j, i], self.p1_Err[j, i] = param_fit.value, param_fit.stderr
+            lineArea = self.fit_output.params[f'{line}_amplitude']
+            self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, lineArea.stderr
+            self.eqw[i], self.eqwErr[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
+
+        return
 
     def line_finder(self, input_flux, noiseWaveLim, intLineThreshold=3, verbose=False):
 
@@ -522,8 +521,6 @@ class EmissionFitting:
                 # Scheme to avoid repeated lines
                 if (unknownLineLabel not in theoLineDF.index) and detect_check:
                     newRow = unidentifiedLine.copy()
-                    # newRow.update({'wavelength': waveObs[i], 'w3': self.wave[idx_min], 'w4': self.wave[idx_max],
-                    #                'observation': 'not identified'})
                     newRow.update({'wavelength': waveObs[i], 'w3': waveObs[i] - 5, 'w4': waveObs[i] + 5,
                                    'observation': 'not identified'})
                     theoLineDF.loc[unknownLineLabel] = newRow
@@ -557,7 +554,7 @@ class EmissionFitting:
         self.m_continuum, self.n_continuum = self._m_continuum, self._n_continuum
         self.p1, self.p1_Err = self._p1, self._p1_Err
         self.fit_params, self.fit_output = self._fit_params, self._fit_output
-        self.blended_check = self._blended_check
+        self.blended_check, self.mixtureComponents = self._blended_check, self._mixtureComponents
 
         return
 
@@ -566,21 +563,39 @@ class LineMesurer(EmissionFitting):
 
     _linesDF = None
     _redshift, _normFlux = 0, 1
+    _wave_units = 'lambda'
 
-    def __init__(self,  input_wave=None, input_flux=None, linesDF_address=None, redshift=None, normFlux=None):
+    def __init__(self, input_wave=None, input_flux=None, input_err=None, linesDF_address=None, redshift=None,
+                 normFlux=None, crop_waves=None, wave_units='lambda', err_type=None):
 
         # Emission model inheritance
         EmissionFitting.__init__(self)
 
+        # Start cropping the input spectrum if necessary
+        if crop_waves is not None:
+            idcs_cropping = (input_wave >= crop_waves[0]) & (input_wave <= crop_waves[1])
+            input_wave = input_wave[idcs_cropping]
+            input_flux = input_flux[idcs_cropping]
+            if input_err is not None:
+                input_err = input_flux[idcs_cropping]
+
         # Import object spectrum
         self.redshift = redshift if redshift is not None else self._redshift
         self.normFlux = normFlux if normFlux is not None else self._normFlux
+        self.wave_units = wave_units
 
-        if (input_wave is not None) and (input_flux is not None):
+        # Apply the redshift correction
+        if (input_wave is not None) and (input_flux is not None): # TODO Add flexibility for wave changes
             self.wave = input_wave / (1 + self.redshift)
-            self.flux = input_flux / self.normFlux
+            self.flux = input_flux * (1 + self.redshift) / self.normFlux
+            if input_err is not None:
+                if err_type == 'variance':
+                    self.errFlux = 1.0 / np.sqrt(input_err/self.normFlux)
+                else:
+                    self.errFlux = input_err/self.normFlux
 
-        # Object lines DF
+
+        # Object lines DF # TODO Change this to the declare the DF
         if linesDF_address is not None:
             self.linesDF = pd.read_csv(linesDF_address, delim_whitespace=True, header=0, index_col=0)
         else:
@@ -590,20 +605,43 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def __str__(self, label=None):
+    def __str__(self, label=None, display_report=False):
+
+        print(fit_report(self.fit_output))
 
         if label is None:
-            output_ref = f'Input line: {self.lineLabel}, {self.lineWaves}\n ' \
-                         f'- Intg flux: {self.lineIntgFlux} +/- {self.lineIntgErr}\n' \
-                         f'- Gauss flux: {self.lineGaussFlux} +/- {self.lineGaussErr}'
-        else:
-            if self.linesDF is not None:
-                if label in self.linesDF.index:
-                    output_ref = self.linesDF.loc[label].to_string
-                else:
-                    output_ref = f'WARNING: {label} not found in  lines table'
+            if self.lineLabel is not None:
+                output_ref = (f'\nInput line: {self.lineLabel}\n'
+                              f'- Line regions: {self.lineWaves}\n'
+                              f'- Spectrum: normalization flux: {self.normFlux}; redshift {self.redshift}\n'
+                              f'- Peak: wavelength {self.peakWave:.2f}; peak intensity {self.peakInt:.2f}\n'
+                              f'- Continuum: slope {self.m_continuum:.2f}; intercept {self.n_continuum:.2f}\n')
+
+                if self.mixtureComponents.size == 1:
+                    output_ref += f'- Intg Eqw: {self.eqw[0]:.2f} +/- {self.eqwErr[0]:.2f}\n'
+
+                output_ref += f'- Intg flux: {self.lineIntgFlux:.3f} +/- {self.lineIntgErr:.3f}\n'
+
+                for i, lineRef in enumerate(self.mixtureComponents):
+                    output_ref += (f'- {lineRef} gaussian fitting:\n'
+                                   f'-- Gauss flux: {self.lineGaussFlux[i]:.3f} +/- {self.lineGaussErr[i]:.3f}\n'
+                                   f'-- Height: {self.p1[0][i]:.3f} +/- {self.p1[0][i]:.3f}\n'
+                                   f'-- Center: {self.p1[1][i]:.3f} +/- {self.p1[1][i]:.3f}\n'
+                                   f'-- Sigma: {self.p1[2][i]:.3f} +/- {self.p1[2][i]:.3f}\n')
+
             else:
-                output_ref = 'WARNING: Measurement lines table not defined'
+                output_ref = f'- No measurement performed'
+
+        elif self.linesDF is not None:
+            if label in self.linesDF.index:
+                output_ref = self.linesDF.loc[label].to_string
+            else:
+                output_ref = f'WARNING: {label} not found in  lines table'
+        else:
+            output_ref = 'WARNING: Measurement lines table not defined'
+
+        if display_report:
+            display_report += '\n' + fit_report(self.fit_output)
 
         return output_ref
 
@@ -617,9 +655,9 @@ class LineMesurer(EmissionFitting):
 
         self.line_properties(idcsLinePeak, idcsContinua, bootstrap_size=1000)
 
-        self.line_fit(algorithm, self.lineLabel, idcsLinePeak, idcsContinua, continuum_check=True, user_conf=fit_conf)
-        # print(fit_report(self.fit_output))
-        # print(self.fit_params)
+        self.line_fit(algorithm, self.lineLabel, idcsLinePeak, idcsContinua, user_conf=fit_conf)
+        # for key, value in self.fit_params.items():
+        #     print(key, value)
         # self.plot_fit_components(self.fit_output)
 
         self.results_to_database(self.lineLabel, self.linesDF, fit_conf)
@@ -628,63 +666,86 @@ class LineMesurer(EmissionFitting):
 
     def results_to_database(self, lineLabel, linesDF, fit_conf, **kwargs):
 
-        # Check if blended line
-        blended_check = False
-        blended_label = 'None'
-        if '_b' in lineLabel:
-            blended_check = True
-            b_order = fit_conf[lineLabel]
+        # Recover label data
+        ion, waveRef, latexLabel = label_decomposition(self.mixtureComponents, combined_dict=fit_conf)
+
+        # Get the components on the list
+        if lineLabel in fit_conf:
             blended_label = fit_conf[lineLabel]
+            linesDF.loc[lineLabel, 'blended'] = blended_label
         else:
-            b_order = lineLabel
+            blended_label = 'None'
 
-        # Establish number of gaussians
-        mixture_list = np.array(b_order.split('-'), ndmin=1)
-        n_comps = mixture_list.size
+        for i, line in enumerate(self.mixtureComponents):
 
-        ion, wave, latexLabel = label_decomposition(mixture_list, combined_dict=fit_conf)
-
-        for i, line in enumerate(mixture_list):
-            linesDF.loc[line, 'wavelength'] = self.peakWave
-            linesDF.loc[line, 'intg_flux'] = self.__getattribute__('lineIntgFlux')
-            linesDF.loc[line, 'intg_err'] = self.__getattribute__('lineIntgErr')
-            linesDF.loc[line, 'cont'] = self.__getattribute__('cont')
-            linesDF.loc[line, 'std_continuum'] = self.__getattribute__('std_continuum')
-            linesDF.loc[line, 'm_continuum'] = self.__getattribute__('m_continuum')
-            linesDF.loc[line, 'n_continuum'] = self.__getattribute__('n_continuum')
-            linesDF.loc[line, 'blended'] = blended_label
-            linesDF.loc[line, 'w1':'w6'] = self.lineWaves
-            linesDF.loc[line, 'observation'] = 'detected'
-
+            linesDF.loc[line, 'wavelength'] = waveRef[i]
             linesDF.loc[line, 'ion'] = ion[i]
-            linesDF.loc[line, 'pynebCode'] = wave[i]
-            linesDF.loc[line, 'latexLabel'] = latexLabel[i]
+            linesDF.loc[line, 'pynebCode'] = waveRef[i]
+            linesDF.loc[line, 'w1':'w6'] = self.lineWaves
 
-            linesDF.loc[line, 'gauss_flux'] = self.__getattribute__('lineGaussFlux')[i]
-            linesDF.loc[line, 'gauss_err'] = self.__getattribute__('lineGaussErr')[i]
+            linesDF.loc[line, 'intg_flux'] = self.__getattribute__('lineIntgFlux') * self.normFlux
+            linesDF.loc[line, 'intg_err'] = self.__getattribute__('lineIntgErr') * self.normFlux
+            linesDF.loc[line, 'cont'] = self.__getattribute__('cont') * self.normFlux
+            linesDF.loc[line, 'std_continuum'] = self.__getattribute__('std_continuum') * self.normFlux
+            linesDF.loc[line, 'm_continuum'] = self.__getattribute__('m_continuum') * self.normFlux
+            linesDF.loc[line, 'n_continuum'] = self.__getattribute__('n_continuum')* self.normFlux
             linesDF.loc[line, 'eqw'] = self.__getattribute__('eqw')[i]
             linesDF.loc[line, 'eqw_err'] = self.__getattribute__('eqwErr')[i]
 
-            if self.p1 is not None:
-                for j, gauss_param in enumerate(('amp', 'mu', 'sigma')):
-                    linesDF.loc[line, gauss_param] = self.p1[j, i]
-                    linesDF.loc[line, gauss_param + '_err'] = self.p1_Err[j, i]
+            linesDF.loc[line, 'peak_wave'] = self.__getattribute__('peakWave')
+            linesDF.loc[line, 'peak_flux'] = self.__getattribute__('peakInt') * self.normFlux
 
-                if blended_check:
-                    linesDF.loc[line, 'wavelength'] = self.p1[1, i]
+            linesDF.loc[line, 'blended'] = blended_label
+            linesDF.loc[line, 'latexLabel'] = latexLabel[i]
+
+            linesDF.loc[line, 'gauss_flux'] = self.__getattribute__('lineGaussFlux')[i] * self.normFlux
+            linesDF.loc[line, 'gauss_err'] = self.__getattribute__('lineGaussErr')[i] * self.normFlux
+
+            linesDF.loc[line, 'observation'] = 'detected'
+
+            if self.p1 is not None:
+
+                # for j, gauss_param in enumerate(('amp', 'mu', 'sigma')):
+                #     if gauss_param == 'amp':
+                #         linesDF.loc[line, gauss_param] = self.p1[j, i] * self.normFlux
+                #         linesDF.loc[line, gauss_param + '_err'] = self.p1_Err[j, i] * self.normFlux
+                #         linesDF.loc[line, 'peak_flux'] = (self.p1[j, i] + self.cont) * self.normFlux
+                #     else:
+                #         linesDF.loc[line, gauss_param] = self.p1[j, i]
+                #         linesDF.loc[line, gauss_param + '_err'] = self.p1_Err[j, i]
+                #
+                #     if gauss_param == 'sigma':
+                #         linesDF.loc[line, 'sigma_vel'] = self.p1[j, i]
+                #         linesDF.loc[line, 'sigma_err_vel'] = self.p1[j, i]
+
+                linesDF.loc[line, 'amp'] = self.p1[0, i] * self.normFlux
+                linesDF.loc[line, 'amp_err'] = self.p1_Err[0, i] * self.normFlux
+                linesDF.loc[line, 'peak_flux'] = (self.p1[0, i] + self.cont) * self.normFlux
+
+                linesDF.loc[line, 'mu'] = self.p1[1, i]
+                linesDF.loc[line, 'mu_err'] = self.p1_Err[1, i]
+                linesDF.loc[line, 'v_r'] = wavelength_to_vel(self.p1[1, i] - waveRef[i], waveRef[i])
+                linesDF.loc[line, 'v_r_err'] = wavelength_to_vel(self.p1[1, i] - self.p1_Err[1, i], waveRef[i])
+
+                linesDF.loc[line, 'sigma'] = self.p1[2, i]
+                linesDF.loc[line, 'sigma_err'] = self.p1_Err[2, i]
+                linesDF.loc[line, 'sigma_vel'] = wavelength_to_vel(self.p1[2, i], waveRef[i])
+                linesDF.loc[line, 'sigma_err_vel'] = wavelength_to_vel(self.p1_Err[2, i], waveRef[i])
+
+                if self.blended_check:
+                    linesDF.loc[line, 'wavelength'] = waveRef[i]
+                    linesDF.loc[line, 'peak_wave'] = self.p1[1, i]
+                    linesDF.loc[line, 'peak_wave'] = self.p1[1, i]
 
                     # Combined line item
-                    linesDF.loc[lineLabel, 'wavelength'] = self.peakWave
                     combined_latex_label = '+'.join(latexLabel)
+                    linesDF.loc[lineLabel, 'wavelength'] = self.peakWave
                     linesDF.loc[lineLabel, 'latexLabel'] = combined_latex_label.replace('$+$', '+')
-                    linesDF.loc[lineLabel, 'latexLabel'] = combined_latex_label.replace('$+$', '+')
-                    linesDF.loc[lineLabel, 'intg_flux'] = self.__getattribute__('lineIntgFlux')
-                    linesDF.loc[lineLabel, 'intg_err'] = self.__getattribute__('lineIntgErr')
-
+                    linesDF.loc[lineLabel, 'intg_flux'] = self.__getattribute__('lineIntgFlux') * self.normFlux
+                    linesDF.loc[lineLabel, 'intg_err'] = self.__getattribute__('lineIntgErr') * self.normFlux
 
         # Sort by gaussian mu if possible
-        linesDF.sort_values('wavelength', inplace=True)
-
+        linesDF.sort_values('peak_wave', inplace=True)
 
         return
 
@@ -738,8 +799,11 @@ class LineMesurer(EmissionFitting):
             idcs_foundLines = (matchedLinesDF.observation.isin(('detected', 'not identified'))) & \
                               (matchedLinesDF.wavelength >= self.wave[0]) & \
                               (matchedLinesDF.wavelength <= self.wave[-1])
-            lineLatexLabel, lineWave = matchedLinesDF.loc[idcs_foundLines].latexLabel.values, matchedLinesDF.loc[
-                idcs_foundLines].wavelength.values
+            if 'latexLabel' in matchedLinesDF:
+                lineLatexLabel = matchedLinesDF.loc[idcs_foundLines].latexLabel.values
+            else:
+                lineLatexLabel = matchedLinesDF.loc[idcs_foundLines].index.values
+            lineWave = matchedLinesDF.loc[idcs_foundLines].wavelength.values
             w3, w4 = matchedLinesDF.loc[idcs_foundLines].w3.values, matchedLinesDF.loc[idcs_foundLines].w4.values
             observation = matchedLinesDF.loc[idcs_foundLines].observation.values
 
@@ -764,7 +828,7 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def plot_fit_components(self, lmfit_output=None, fig_conf={}, ax_conf={}, output_address=None):
+    def plot_fit_components(self, lmfit_output=None, fig_conf={}, ax_conf={}, output_address=None, logScale=False):
 
         # Plot Configuration
         defaultConf = STANDARD_PLOT.copy()
@@ -780,22 +844,6 @@ class LineMesurer(EmissionFitting):
         # Plot line spectrum
         ax.step(self.wave[idcsLine], self.flux[idcsLine], label='Line spectrum')
 
-        # # Plot line regions
-        # if self.lineWaves is not None:
-        #
-        #     leftWave, leftFlux = self.wave[idcsContLeft], self.flux[idcsContLeft]
-        #     rightWave, rightFlux = self.wave[idcsContRight], self.flux[idcsContRight]
-        #
-        #     ax.fill_between(leftWave, 0, leftFlux, facecolor='tab:green', step="pre", alpha=0.4)
-        #     ax.fill_between(rightWave, 0, rightFlux, facecolor='tab:green', step="pre", alpha=0.4)
-
-        # # Plot linear continuum
-        # if 'cont_slop' in lmfit_output.params:
-        #     m, n = lmfit_output.params['cont_slope'].value, lmfit_output.params['cont_slope'].value,
-        #     x_cont = np.linspace(self.lineWaves[0], self.lineWaves[5], num=100)
-        #     y_cont = m * x_cont + n
-        #     ax.plot(x_cont, y_cont, color='tab:orange', linestyle='--', label='Linear continuum')
-
         # Print lmfit results
         if lmfit_output is not None:
             x_fit, y_fit = lmfit_output.userkws['x'], lmfit_output.data
@@ -806,8 +854,8 @@ class LineMesurer(EmissionFitting):
             ax.plot(wave_resample, sum(flux_resample.values()), label='LMFIT output', )
 
             # Plot individual components
-            # for comp_label, comp_flux in flux_resample.items():
-            #     ax.plot(wave_resample, comp_flux, label=f'Component {comp_label}', linestyle='--')
+            for comp_label, comp_flux in flux_resample.items():
+                ax.plot(wave_resample, comp_flux, label=f'Component {comp_label}', linestyle='--')
 
         defaultConf = STANDARD_AXES.copy()
         defaultConf.update(ax_conf)
@@ -817,15 +865,15 @@ class LineMesurer(EmissionFitting):
 
         ax.update(defaultConf)
         ax.legend()
-        ax.set_yscale('log')
+
+        if logScale:
+            ax.set_yscale('log')
 
         if output_address is None:
             plt.tight_layout()
             plt.show()
         else:
             plt.savefig(output_address, bbox_inches='tight')
-
-        plt.close(fig)
 
         return
 
@@ -931,7 +979,6 @@ class LineMesurer(EmissionFitting):
 
         # Generate plot
         for i in np.arange(lineLabels.size):
-            print(lineLabels[i])
             self.lineWaves = lines_df.loc[lineLabels[i], 'w1':'w6'].values
             self.plot_line_region_i(axesList[i], lineLabels[i], lines_df)
             dict_spanSelec[f'spanner_{i}'] = SpanSelector(axesList[i], self.on_select, 'horizontal', useblit=True,
@@ -1017,8 +1064,12 @@ class LineMesurer(EmissionFitting):
         # Plot format
         ax.yaxis.set_major_locator(plt.NullLocator())
         ax.xaxis.set_major_locator(plt.NullLocator())
-        ax.update({'title': f'{linesDF.loc[lineLabel, "latexLabel"]}'})
-        ax.set_yscale('log')
+        if 'latexLabel' in linesDF.columns:
+            title_axes = linesDF.loc[lineLabel, "latexLabel"]
+        else:
+            title_axes = lineLabel
+        ax.update({'title': title_axes})
+        # ax.set_yscale('log')
         try:
             idxPeakFlux = np.argmax(fluxPeak)
             ax.set_ylim(ymin=np.min(fluxLine) / 5, ymax=fluxPeak[idxPeakFlux] * 1.25)
@@ -1066,7 +1117,6 @@ class LineMesurer(EmissionFitting):
         else:
 
             # Proceed to measurment
-
             idcsContLeft = (self.lineWaves[0] <= self.wave) & (self.wave <= self.lineWaves[1])
             idcsContRight = (self.lineWaves[4] <= self.wave) & (self.wave <= self.lineWaves[5])
             idcsLinePeak = (lineWave - limitPeak <= self.wave) & (self.wave <= lineWave + limitPeak)
@@ -1102,6 +1152,90 @@ class LineMesurer(EmissionFitting):
         ax.set_ylim(ymin=np.min(fluxLine) / 5, ymax=fluxPeak[idxPeakFlux] * 1.25)
         ax.yaxis.set_ticklabels([])
         ax.axes.yaxis.set_visible(False)
+
+        return
+
+    def table_fluxes(self, lines_df, tex_address, txt_address, pyneb_rc, tableHeaders=FLUX_TXT_TABLE_HEADERS,
+                    scaleTable=1000):
+
+        # TODO this could be included in sr.print
+
+        # Measure line fluxes
+        pdf = PdfPrinter()
+        pdf.create_pdfDoc(tex_address, pdf_type='table')
+        pdf.pdf_insert_table(FLUX_TEX_TABLE_HEADERS)
+
+        # Dataframe as container as a txt file
+        tableDF = pd.DataFrame(columns=FLUX_TXT_TABLE_HEADERS[1:])
+
+        # Normalization line
+        flux_Hbeta = lines_df.loc['H1_4861A', 'intg_flux']
+
+        obsLines = lines_df.index.values
+        for lineLabel in obsLines:
+
+            label_entry = lines_df.loc[lineLabel, 'latexLabel']
+            wavelength = lines_df.loc[lineLabel, 'wavelength']
+            eqw, eqwErr = lines_df.loc[lineLabel, 'eqw'], lines_df.loc[lineLabel, 'eqw_err']
+
+            flux_intg = lines_df.loc[lineLabel, 'intg_flux'] / flux_Hbeta * scaleTable
+            flux_intgErr = lines_df.loc[lineLabel, 'intg_err'] / flux_Hbeta * scaleTable
+            flux_gauss = lines_df.loc[lineLabel, 'gauss_flux'] / flux_Hbeta * scaleTable
+            flux_gaussErr = lines_df.loc[lineLabel, 'gauss_err'] / flux_Hbeta * scaleTable
+
+            if (lines_df.loc[lineLabel, 'blended'] != 'None') and ('_m' not in lineLabel):
+                flux, fluxErr = flux_gauss, flux_gaussErr
+                label_entry = label_entry + '$_{gauss}$'
+            else:
+                flux, fluxErr = flux_intg, flux_intgErr
+
+            # Correct the flux
+            corr = pyneb_rc.getCorrHb(wavelength)
+            intensity, intensityErr = flux * corr, fluxErr * corr
+
+            eqw_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(eqw, eqwErr)
+            flux_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(flux, fluxErr)
+            intensity_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(intensity, intensityErr)
+
+            # Add row of data
+            tex_row_i = [label_entry, eqw_entry, flux_entry, intensity_entry]
+            txt_row_i = [label_entry, eqw, eqwErr, flux, fluxErr, intensity, intensityErr]
+
+            lastRow_check = True if lineLabel == obsLines[-1] else False
+            pdf.addTableRow(tex_row_i, last_row=lastRow_check)
+            tableDF.loc[lineLabel] = txt_row_i[1:]
+
+        # Data last rows
+        row_Hbetaflux = [r'$H\beta$ $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
+                         '',
+                         flux_Hbeta,
+                         flux_Hbeta * pyneb_rc.getCorr(4861)]
+
+        row_cHbeta = [r'$c(H\beta)$',
+                      '',
+                      float(pyneb_rc.cHbeta),
+                      '']
+
+        pdf.addTableRow(row_Hbetaflux, last_row=False)
+        pdf.addTableRow(row_cHbeta, last_row=False)
+        tableDF.loc[row_Hbetaflux[0]] = row_Hbetaflux[1:] + [''] * 3
+        tableDF.loc[row_cHbeta[0]] = row_cHbeta[1:] + [''] * 3
+
+        # Format last rows
+        pdf.table.add_hline()
+        pdf.table.add_hline()
+
+        # Save the pdf table
+        try:
+            pdf.generate_pdf(clean_tex=True)
+        except:
+            print('-- PDF compilation failure')
+
+        # Save the txt table
+        with open(txt_address, 'wb') as output_file:
+            string_DF = tableDF.to_string()
+            string_DF = string_DF.replace('$', '')
+            output_file.write(string_DF.encode('UTF-8'))
 
         return
 
@@ -1222,69 +1356,63 @@ class LineMesurer(EmissionFitting):
 
 if __name__ == '__main__':
 
-    # Generate fake data
-    lineLabel = 'O3_5007A'
-    wave = np.linspace(4950, 5050)
-    m, n, noise = 0.0, 2.0, np.random.normal(0, 0.05, wave.size)
-    flux_cont = (m * wave + n) + noise
-    ampTrue, muTrue, sigmaTrue = 10, 5007, 2.3
-    flux_gauss = gauss_func((wave, flux_cont), ampTrue, muTrue, sigmaTrue)
-    wave_regions = np.array([4960, 4980, 4996, 5015, 5030, 5045])
+    # Fake data
+    pixels_n = 200
+    noise_mag = 0.30
+    m, n = 0.005, 4.0
+    ampTrue, muTrue, sigmaTrue = 20, 5007, 2.3
     areaTrue = np.sqrt(2 * np.pi * sigmaTrue ** 2) * ampTrue
+    linelabel, wave_regions = 'O3_5007A', np.array([4960, 4980, 4996, 5015, 5030, 5045])
 
-    lm = EmissionFitting(wave, flux_gauss)
+    # Spectrum generation
+    wave = np.linspace(4950, 5050, num=200)
+    continuum = (m * wave + n)
+    noise = np.random.normal(0, noise_mag, pixels_n)
+    emLine = gauss_func((wave, continuum), ampTrue, muTrue, sigmaTrue)
+    flux = noise + emLine
 
-    # Declare regions data
-    idcsLines, idcsContinua = lm.define_masks(wave_regions)
+    # Call funcions
+    lm = LineMesurer(wave, flux, normFlux=10)
 
-    # Identify line regions
-    lm.line_properties(idcsLines, idcsContinua, bootstrap_size=1000)
-
-    # Fit gaussian profile MC
-    p1, p1_Err, lineGaussFlux, lineGaussErr = lm.gauss_mcfit(idcsLines, idcsContinua, bootstrap_size=1000)
-
-    # Fit gaussian profit lmfit
-    fit_output = lm.gauss_lmfit(lineLabel, idcsLines, idcsContinua)
-    p1_lmfit, p1_Err_lmfit = np.empty(3), np.empty(3)
-    for idx, param in enumerate(['_height', '_center', '_sigma']):
-        param_fit = fit_output.params[lineLabel + param]
-        p1_lmfit[idx], p1_Err_lmfit[idx] = param_fit.value, param_fit.stderr
+    # Perform fit
+    lm.fit_from_wavelengths(linelabel, wave_regions)
+    print(lm)
 
     # Comparing flux integration techniques
+    idcsLines, idcsContinua = lm.define_masks(wave_regions)
     lineWave, lineFlux = lm.wave[idcsLines], lm.flux[idcsLines]
     continuaWave, continuaFlux = lm.wave[idcsContinua], lm.flux[idcsContinua]
     lineContinuumFit = lineWave * lm.m_continuum + lm.n_continuum
     areaSimps = integrate.simps(lineFlux, lineWave) - integrate.simps(lineContinuumFit, lineWave)
     areaTrapz = integrate.trapz(lineFlux, lineWave) - integrate.trapz(lineContinuumFit, lineWave)
     areaIntgPixel = (lm.flux[idcsLines].sum() - lineContinuumFit.sum()) * lm.pixelWidth
-    resampleWaveLine = np.linspace(lineWave[0] - 10, lineWave[-1] + 10, 100)
-    resampleFluxCont = resampleWaveLine * lm.m_continuum + lm.n_continuum
-    gaussianCurve = gauss_func((resampleWaveLine, resampleFluxCont), *p1)
-    areaGauss = (gaussianCurve.sum() - resampleFluxCont.sum()) * np.diff(resampleWaveLine).mean()
 
     # Print the results
     print(f'True area : {areaTrue}')
-    print(f'Simpsons rule: {areaSimps}')
-    print(f'Trapezoid rule: {areaTrapz}')
-    print(f'Pixel intgr: {areaIntgPixel}')
-    print(f'Pixel intgr MC: {lm.lineIntgFlux} +/- {lm.lineIntgErr}')
-    print(f'Gauss intgr: {areaGauss}')
-    print(f'Gauss MC: {lineGaussFlux} +/- {lineGaussErr}')
-    lmfit_area = fit_output.params[f'{lineLabel}_amplitude']
-    print(f'Gauss Lmfit: {lmfit_area.value} +/- {lmfit_area.stderr}')
-    print(f'True amp = {ampTrue}, mu = {muTrue}, sigma = {sigmaTrue}')
-    print(f'Fit amp = {p1[0]:2f} +/- {p1_Err[0]:2f}, mu = {p1[1]:2f} +/- {p1_Err[1]:2f}, '
-          f'sigma = {p1[2]:2f} +/- {p1_Err[2]:2f}')
-    print(f'LMFIT amp = {p1_lmfit[0]:2f} +/- {p1_Err_lmfit[0]:2f}, mu = {p1_lmfit[1]:2f} +/- {p1_Err_lmfit[1]:2f}, '
-          f'sigma = {p1_lmfit[2]:2f} +/- {p1_Err_lmfit[2]:2f}')
+    print(f'Simpsons rule: {areaSimps * lm.normFlux}')
+    print(f'Trapezoid rule: {areaTrapz * lm.normFlux}')
+    print(f'Fit integration: {lm.lineIntgFlux * lm.normFlux} +/- {lm.lineIntgErr * lm.normFlux}')
+    print(f'Fit gaussian: {lm.lineGaussFlux[0] * lm.normFlux} +/- {lm.lineGaussErr[0] * lm.normFlux}')
 
-    print(f'Eqw MC {lm.eqw} +/- {lm.eqwErr}')
+    # Lmfit output
+    x_in, y_in = lm.fit_output.userkws['x'], lm.fit_output.data
+    wave_resample = np.linspace(x_in[0], x_in[-1], 500)
+    flux_resample = lm.fit_output.eval_components(x=wave_resample)
+    cont_resample = lm.m_continuum * wave_resample + lm.n_continuum
 
     fig, ax = plt.subplots()
-    ax.plot(wave, flux_gauss, label='Observed line')
-    ax.scatter(continuaWave, continuaFlux, label='Continuum regions')
-    ax.plot(lineWave, lineContinuumFit, label='Observed line', linestyle=':')
-    ax.plot(resampleWaveLine, gaussianCurve, label='Gaussian fit', linestyle=':')
+    ax.step(lm.wave, lm.flux, label='Observed line')
+    ax.scatter(x_in, lm.fit_output.data, color='tab:red', alpha=0.2, label='Input points')
+    ax.plot(wave_resample, sum(flux_resample.values()), label='Gaussian fit')
+    ax.plot(wave_resample, cont_resample, label='Linear fitting Scipy', linestyle='--')
+
+    # Plot individual components
+    for comp_label, comp_flux in flux_resample.items():
+        ax.plot(wave_resample, comp_flux, label=f'Component {comp_label}', linestyle='--')
+
+    # ax.scatter(continuaWave, continuaFlux, label='Continuum regions')
+    # ax.plot(lineWave, lineContinuumFit, label='Observed line', linestyle=':')
+    # ax.plot(resampleWaveLine, gaussianCurve, label='Gaussian fit', linestyle=':')
     ax.legend()
     ax.update({'xlabel': 'Flux', 'ylabel': 'Wavelength', 'title': 'Gaussian fitting'})
     plt.show()
