@@ -156,7 +156,6 @@ class SpectraSynthesizer(MCOutputDisplay):
 
             # Establish model temperature structure
             if include_Thigh_prior:
-                print('HHHHHHHHHHIIIIIIIIIIIIIIIIIIGGGGGGGGGGGGJJJJJJJJJJJJJJ')
                 self.set_prior('T_high')
             else:
                 self.paramDict['T_high'] = TOIII_TSIII_relation(self.paramDict['T_low'])

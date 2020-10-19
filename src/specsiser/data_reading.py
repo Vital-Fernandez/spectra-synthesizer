@@ -325,10 +325,11 @@ def safeConfData(fileAddress, parametersDict, conf_style_path=None):
             value_formatted = formatConfEntry(value)
             output_cfg.set(section, lineLabel, value_formatted)
 
-    # User input lines
+    # User input lines # TODO this might have to go to another place
     if 'input_lines' in parametersDict:
 
-        section = 'objData_1'
+        section = 'inference_model_configuration'
+
         if output_cfg.has_section(section) is False:
             output_cfg.add_section(section)
 
@@ -337,14 +338,15 @@ def safeConfData(fileAddress, parametersDict, conf_style_path=None):
 
     # User true parameter values
     if 'true_values' in parametersDict:
-        section = 'objData_1'
+
+        section = 'true_values'
 
         if output_cfg.has_section(section) is False:
             output_cfg.add_section(section)
 
         for item in parametersDict['true_values']:
             value_formatted = formatConfEntry(parametersDict['true_values'][item])
-            output_cfg.set(section, f'{item}_true', value_formatted)
+            output_cfg.set(section, f'{item}', value_formatted)
 
     # Safe the configuration file
     with open(fileAddress, 'w') as f:

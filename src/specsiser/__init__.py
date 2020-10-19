@@ -34,13 +34,13 @@ from .data.spectra_files import import_fits_data
 from .print import plot
 
 # Get default configuration settings
-_default_cfg = loadConfData(os.path.join(_dir_path, 'config.ini'))
+_default_cfg = loadConfData(os.path.join(_dir_path, 'config.ini'), group_variables=False)
 
 # Declare default data folder
-_literatureDataFolder = os.path.join(_dir_path, _default_cfg['external_data_folder'])
+_literatureDataFolder = os.path.join(_dir_path, _default_cfg['data_location']['external_data_folder'])
 
 # Load library databases
-linesDatabasePath = os.path.join(_literatureDataFolder, _default_cfg['lines_data_file'])
+linesDatabasePath = os.path.join(_literatureDataFolder, _default_cfg['data_location']['lines_data_file'])
 _linesDb = pd.read_excel(linesDatabasePath, sheet_name=0, header=0, index_col=0)
 
 

@@ -1,18 +1,19 @@
 import os
 import numpy as np
-import src.specsiser as ss
+from pathlib import Path
+import src.specsiser as sr
 
 # Search for the data in the default user folder
 n_objs = 1
 
 # user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
-user_folder = 'D:\\AstroModels\\'
-fileStructure = f'{user_folder}/GridEmiss_region'
-output_db = f'{fileStructure}s{n_objs}_db'
+user_folder = Path('D:/AstroModels')
+output_db = user_folder/f'GridEmiss_regions{n_objs}_db'
 
 # Declare sampler
-obj1_model = ss.SpectraSynthesizer()
+obj1_model = sr.SpectraSynthesizer()
 
+# Simulation lines
 excludeLines = np.array(['H1_4341A', 'O3_4363A', 'Ar4_4740A', 'O3_4959A', 'O3_5007A', 'S3_6312A', 'N2_6548A', 'H1_6563A',
                         'He1_5876A', 'He1_6678A', 'He1_7065A', 'He2_4686A', 'N2_6584A', 'S2_6716A', 'S2_6731A',
                          'Ar3_7136A', 'O2_7319A', 'O2_7330A', 'S3_9069A', 'S3_9531A'])
@@ -21,35 +22,35 @@ excludeLines = np.array(['H1_4341A', 'O3_4363A', 'Ar4_4740A', 'O3_4959A', 'O3_50
 for idx_obj in range(n_objs):
 
     # State the objects to study
-    linesLogAddress = f'{fileStructure}{idx_obj+1}of{n_objs}_linesLog.txt'
-    simulationData_file = f'{fileStructure}{idx_obj+1}of{n_objs}_config.txt'
+    linesLogAddress = user_folder/f'GridEmiss_region{idx_obj+1}of{n_objs}_linesLog.txt'
+    simulationData_file = user_folder/f'GridEmiss_region{idx_obj+1}of{n_objs}_config.txt'
 
     # Load simulation parameters
-    objParams = ss.loadConfData(simulationData_file)
+    objParams = sr.loadConfData(simulationData_file, group_variables=False)
 
     # Load emission lines
-    objLinesDF = ss.import_emission_line_data(linesLogAddress, include_lines=excludeLines)
+    objLinesDF = sr.import_emission_line_data(linesLogAddress, include_lines=excludeLines)
 
     # Declare simulation physical properties
-    objRed = ss.ExtinctionModel(Rv=objParams['R_v'],
-                                red_curve=objParams['reddenig_curve'],
-                                data_folder=objParams['external_data_folder'])
+    objRed = sr.ExtinctionModel(Rv=objParams['simulation_properties']['R_v'],
+                                red_curve=objParams['simulation_properties']['reddenig_curve'],
+                                data_folder=objParams['data_location']['external_data_folder'])
 
-    objIons = ss.IonEmissivity(tempGrid=objParams['temp_grid'],
-                               denGrid=objParams['den_grid'])
+    objIons = sr.IonEmissivity(tempGrid=objParams['simulation_properties']['temp_grid'],
+                               denGrid=objParams['simulation_properties']['den_grid'])
 
     # Generate interpolator from the emissivity grids
     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
-    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=ss._linesDb)
+    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=sr._linesDb)
 
     # Declare chemical model
-    objChem = ss.DirectMethod(linesDF=objLinesDF, highTempIons=objParams['high_temp_ions_list'])
+    objChem = sr.DirectMethod(linesDF=objLinesDF, highTempIons=objParams['simulation_properties']['high_temp_ions_list'])
 
     # Declare region physical model
-    obj1_model.define_region(objLinesDF, objIons, objRed, objChem, n_region=idx_obj)
+    obj1_model.define_region(objLinesDF, objIons, objRed, objChem)
 
 # Declare sampling properties
-obj1_model.simulation_configuration(objParams['parameter_list'], prior_conf_dict=objParams, n_regions=n_objs)
+obj1_model.simulation_configuration(objParams['inference_model_configuration']['parameter_list'], prior_conf_dict=objParams['priors_configuration'], n_regions=n_objs)
 
 # Declare simulation inference model
 obj1_model.inference_model()
@@ -57,39 +58,28 @@ obj1_model.inference_model()
 # Run the simulation
 obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
 
-simulation_outputfile = f'{fileStructure}s{n_objs}_results.txt'
-obj1_model.load_sampler_results(output_db, simulation_outputfile, n_regions=n_objs)
-
 # Plot the results
-traces_dict = ss.load_MC_fitting(output_db, normConstants=objParams)
+fit_results = sr.load_MC_fitting(output_db)
 
-# Table mean values
-true_values = {k.replace('_true', ''): v for k, v in objParams.items() if '_true' in k}
-
+# Print the results
 print('-- Model parameters table')
-figure_file = f'{fileStructure}s{n_objs}_MeanOutputs'
-obj1_model.table_mean_outputs(figure_file, traces_dict, true_values)
+figure_file = user_folder/f'GridEmiss_region{n_objs}_MeanOutputs'
+obj1_model.table_mean_outputs(figure_file, fit_results, true_values=objParams['true_values'])
 
 print('-- Flux values table')
-figure_file = f'{fileStructure}s{n_objs}_EmissionFluxComparison'
-obj1_model.table_line_fluxes(figure_file, traces_dict, obj1_model.lineLabels, obj1_model.emissionFluxes, obj1_model.emissionErr)
+figure_file = user_folder/f'GridEmiss_region{n_objs}_FluxComparison'
+obj1_model.table_line_fluxes(figure_file, fit_results)
 
 print('-- Model parameters posterior diagram')
-figure_file = f'{fileStructure}s{n_objs}_ParamsPosteriors.txt'
-obj1_model.tracesPosteriorPlot(objParams['parameter_list'], traces_dict, true_values=true_values)
-obj1_model.savefig(figure_file, resolution=200)
-
-print('-- Model parameters corner diagram')
-figure_file = f'{fileStructure}s{n_objs}_corner'
-obj1_model.corner_plot(objParams['parameter_list'], traces_dict, idx_obj, true_values)
-obj1_model.savefig(figure_file, resolution=200)
+figure_file = user_folder/f'GridEmiss_region{n_objs}_ParamsPosteriors.png'
+obj1_model.tracesPosteriorPlot(figure_file, fit_results, true_values=objParams['true_values'])
 
 print('-- Line flux posteriors')
-figure_file = f'{fileStructure}s{n_objs}_lineFluxPosteriors.txt'
-obj1_model.fluxes_distribution(obj1_model.lineLabels, obj1_model.lineIons, 'calcFluxes_Op', traces_dict, obj1_model.emissionFluxes, obj1_model.emissionErr, objLinesDF.latexLabel.values)
-obj1_model.savefig(figure_file, resolution=200)
+figure_file = user_folder/f'GridEmiss_region{n_objs}_lineFluxPosteriors.png'
+obj1_model.fluxes_distribution(figure_file, fit_results)
 
-# print('-- Model parameters Traces-Posterior diagram')
-# figure_file = f'{fileStructure}s{n_objs}_paramsTracesPost'
-# obj1_model.tracesPriorPostComp(objParams['parameter_list'], traces_dict, true_values=true_values)
+# print('-- Model parameters corner diagram')
+# figure_file = simFolder/f'{objName}_corner'
+# obj1_model.corner_plot(objParams['parameter_list'], traces_dict)
 # obj1_model.savefig(figure_file, resolution=200)
+

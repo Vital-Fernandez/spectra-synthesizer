@@ -1169,7 +1169,11 @@ class LineMesurer(EmissionFitting):
         tableDF = pd.DataFrame(columns=FLUX_TXT_TABLE_HEADERS[1:])
 
         # Normalization line
-        flux_Hbeta = lines_df.loc['H1_4861A', 'intg_flux']
+        if 'H1_4861A' in lines_df.index:
+            flux_Hbeta = lines_df.loc['H1_4861A', 'intg_flux']
+        else:
+            flux_Hbeta = scaleTable
+
 
         obsLines = lines_df.index.values
         for lineLabel in obsLines:
