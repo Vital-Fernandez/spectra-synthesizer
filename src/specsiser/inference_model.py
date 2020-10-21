@@ -63,6 +63,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.lineIons = objLinesDF.ion.values
         self.emissionFluxes = objLinesDF.obsFlux.values
         self.emissionErr = objLinesDF.obsFluxErr.values
+        print(objLinesDF.obsWave.values)
         self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.obsWave.values)
         self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
 

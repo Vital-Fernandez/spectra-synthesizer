@@ -606,7 +606,6 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
         else:
             outputDF.loc[linelabel, 'ion'] = ion_array[0]
 
-
     return outputDF
 
 

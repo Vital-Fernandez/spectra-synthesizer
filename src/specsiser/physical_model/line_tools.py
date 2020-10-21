@@ -218,6 +218,15 @@ def wavelength_to_vel(wave, wave_ref, c=299792.458):
     return c * (wave/wave_ref)
 
 
+def save_lineslog(linesDF, file_address):
+
+    with open(file_address, 'wb') as output_file:
+        string_DF = linesDF.to_string()
+        output_file.write(string_DF.encode('UTF-8'))
+
+    return
+
+
 class EmissionFitting:
 
     """Class to to measure emission line fluxes and fit them as gaussian curves"""
@@ -451,7 +460,7 @@ class EmissionFitting:
         if self.errFlux is None:
             errLine = np.full(idcsFit.sum(), fill_value=1.0/self.std_continuum)#1.0/np.power(self.std_continuum, 2))
         else:
-            errLine = self.errFlux[idcsFit]
+            errLine = 1.0/np.sqrt(np.abs(self.errFlux[idcsFit]))
 
         # Fit the line
         self.fit_output = fit_function.fit(self.flux[idcsFit], self.fit_params, x=self.wave[idcsFit], weights=errLine)
@@ -566,7 +575,7 @@ class LineMesurer(EmissionFitting):
     _wave_units = 'lambda'
 
     def __init__(self, input_wave=None, input_flux=None, input_err=None, linesDF_address=None, redshift=None,
-                 normFlux=None, crop_waves=None, wave_units='lambda', err_type=None):
+                 normFlux=None, crop_waves=None, wave_units='lambda'):
 
         # Emission model inheritance
         EmissionFitting.__init__(self)
@@ -577,7 +586,7 @@ class LineMesurer(EmissionFitting):
             input_wave = input_wave[idcs_cropping]
             input_flux = input_flux[idcs_cropping]
             if input_err is not None:
-                input_err = input_flux[idcs_cropping]
+                input_err = input_err[idcs_cropping]
 
         # Import object spectrum
         self.redshift = redshift if redshift is not None else self._redshift
@@ -589,11 +598,7 @@ class LineMesurer(EmissionFitting):
             self.wave = input_wave / (1 + self.redshift)
             self.flux = input_flux * (1 + self.redshift) / self.normFlux
             if input_err is not None:
-                if err_type == 'variance':
-                    self.errFlux = 1.0 / np.sqrt(input_err/self.normFlux)
-                else:
-                    self.errFlux = input_err/self.normFlux
-
+                self.errFlux = input_err * (1 + self.redshift)/self.normFlux
 
         # Object lines DF # TODO Change this to the declare the DF
         if linesDF_address is not None:

@@ -16,7 +16,7 @@ obj1_model = sr.SpectraSynthesizer()
 # Simulation lines
 excludeLines = np.array(['H1_4341A', 'O3_4363A', 'Ar4_4740A', 'O3_4959A', 'O3_5007A', 'S3_6312A', 'N2_6548A', 'H1_6563A',
                         'He1_5876A', 'He1_6678A', 'He1_7065A', 'He2_4686A', 'N2_6584A', 'S2_6716A', 'S2_6731A',
-                         'Ar3_7136A', 'O2_7319A', 'O2_7330A', 'S3_9069A', 'S3_9531A'])
+                         'Ar3_7136A', 'O2_7319A_b', 'S3_9069A', 'S3_9531A'])
 
 # Loop through the number of regions
 for idx_obj in range(n_objs):
@@ -41,7 +41,8 @@ for idx_obj in range(n_objs):
 
     # Generate interpolator from the emissivity grids
     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
-    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=sr._linesDb)
+    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=sr._linesDb,
+                                   combined_dict={'O2_7319A_b': 'O2_7319A-O2_7330A'})
 
     # Declare chemical model
     objChem = sr.DirectMethod(linesDF=objLinesDF, highTempIons=objParams['simulation_properties']['high_temp_ions_list'])
@@ -68,7 +69,7 @@ obj1_model.table_mean_outputs(figure_file, fit_results, true_values=objParams['t
 
 print('-- Flux values table')
 figure_file = user_folder/f'GridEmiss_region{n_objs}_FluxComparison'
-obj1_model.table_line_fluxes(figure_file, fit_results)
+obj1_model.table_line_fluxes(figure_file, fit_results, combined_dict={'O2_7319A_b': 'O2_7319A-O2_7330A'})
 
 print('-- Model parameters posterior diagram')
 figure_file = user_folder/f'GridEmiss_region{n_objs}_ParamsPosteriors.png'
@@ -76,7 +77,7 @@ obj1_model.tracesPosteriorPlot(figure_file, fit_results, true_values=objParams['
 
 print('-- Line flux posteriors')
 figure_file = user_folder/f'GridEmiss_region{n_objs}_lineFluxPosteriors.png'
-obj1_model.fluxes_distribution(figure_file, fit_results)
+obj1_model.fluxes_distribution(figure_file, fit_results, combined_dict={'O2_7319A_b': 'O2_7319A-O2_7330A'})
 
 # print('-- Model parameters corner diagram')
 # figure_file = simFolder/f'{objName}_corner'

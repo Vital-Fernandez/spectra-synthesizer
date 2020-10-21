@@ -33,16 +33,24 @@ for n_obj in range(n_objs):
                                 'Ar4': 5.06 + 0.15 * n_obj}
 
     # Declare lines to simulate
-    input_lines = ['H1_4341A', 'H1_4861A', 'H1_6563A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He1_7065A',
-                   'He2_4686A', 'O2_7319A_b', 'O2_7319A', 'O2_7330A', 'O3_4363A', 'O3_4959A', 'O3_5007A', 'N2_6548A',
-                   'N2_6584A', 'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A', 'Ar4_4740A']
-    objParams['input_lines'] = input_lines
+    objParams['input_lines'] = ['H1_4341A', 'H1_4861A', 'H1_6563A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He1_7065A',
+                   'He2_4686A', 'O2_7319A_b', 'O2_7319A', 'O2_7330A', 'O2_7319A_b', 'O3_4363A', 'O3_4959A', 'O3_5007A',
+                   'N2_6548A', 'N2_6584A', 'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A',
+                   'Ar4_4740A']
 
     # We use the default lines database to generate the synthetic emission lines log for this simulation
     linesLogPath = os.path.join(sr._literatureDataFolder, sr._default_cfg['data_location']['lines_data_file'])
 
     # Prepare dataframe with the observed lines labeled
     objLinesDF = sr.import_emission_line_data(linesLogPath, include_lines=objParams['input_lines'])
+
+    objLinesDF.loc['O2_7319A_b'] = None
+    objLinesDF.loc['O2_7319A_b', 'wavelength'] = 7325.0
+    objLinesDF.loc['O2_7319A_b', 'obsWave'] = 7325.0
+    objLinesDF.loc['O2_7319A_b', 'ion'] = 'O2'
+    objLinesDF.loc['O2_7319A_b', 'blended'] = 'O2_7319A-O2_7330A'
+    objLinesDF.loc['O2_7319A_b', 'latexlabel'] = '$7319\AA\,[OII]+7330\AA\,[OII]$'
+    objLinesDF.sort_values(by=['obsWave'], ascending=True, inplace=True)
 
     # Declare extinction properties
     objRed = sr.ExtinctionModel(Rv=objParams['simulation_properties']['R_v'],
@@ -62,7 +70,8 @@ for n_obj in range(n_objs):
     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
 
     # Compute the emissivity surfaces for the observed emission lines
-    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=objLinesDF)
+    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=objLinesDF,
+                                   combined_dict={'O2_7319A_b': 'O2_7319A-O2_7330A'})
 
     # Declare the paradigm for the chemical composition measurement
     objChem = sr.DirectMethod()

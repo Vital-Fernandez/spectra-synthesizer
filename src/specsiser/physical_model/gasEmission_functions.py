@@ -83,7 +83,7 @@ class EmissionFluxModel:
                         'He1r': self.ion_He1r_flux_log,
                         'He2r': self.ion_He2r_flux_log,
                         'metals': self.metals_flux_log,
-                        'O2_7319A_m': self.ion_O2_7319A_b_flux_log}
+                        'O2_7319A_b': self.ion_O2_7319A_b_flux_log}
 
         for i, lineLabel in enumerate(label_list):
 
@@ -139,8 +139,17 @@ class EmissionFluxModel:
         return abund + emis_ratio - flambda * cHbeta - 12
 
     def ion_O2_7319A_b_flux_log(self, emis_ratio, cHbeta, flambda, abund, ftau, O3, T_high):
-        return np.log10(np.power(10, abund + emis_ratio - flambda * cHbeta - 12) + np.power(10, O3 + T_high -
-                                                                                            flambda * cHbeta - 12))
+        col_ext = tt.power(10, abund + emis_ratio - flambda * cHbeta - 12)
+        recomb = tt.power(10, O3 + 0.9712758 + tt.log10(tt.power(T_high/10000.0, 0.44)) - flambda * cHbeta - 12)
+        return tt.log10(col_ext + recomb)
+
+        # return np.log10(np.power(10, abund + emis_ratio - flambda * cHbeta - 12) + np.power(10, O3 + T_high -
+        #                                                                                     flambda * cHbeta - 12))
+
+
+# tt.pow(10, O2_abund + emis_ratio - flambda * cHbeta - 12) + tt.pow(10, O3_abund + 0.9712758487381 + tt.log10(tt.pow(Te_high / 10000.0, 0.44)) - flambda * cHbeta - 12)
+
+
 
 
 class EmissionTensors(EmissionFluxModel):
