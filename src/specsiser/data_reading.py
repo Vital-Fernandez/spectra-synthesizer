@@ -17,7 +17,7 @@ __all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC
 
 CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
 STRINGCONFKEYS = ['sampler', 'reddenig_curve', 'norm_line_label', 'norm_line_pynebCode']
-GLOBAL_LOCAL_GROUPS = ['_line_fitting']
+GLOBAL_LOCAL_GROUPS = ['_line_fitting', '_chemical_model']
 
 
 # Function to check if variable can be converte to float else leave as string
@@ -219,7 +219,7 @@ def check_missing_flux_values(flux):
 
 
 # Function to import SpecSyzer configuration file #TODO repeated
-def loadConfData(filepath, objList=None, group_variables=True):
+def loadConfData(filepath, objList_check=False, group_variables=True):
 
     # Open the file
     cfg = importConfigFile(filepath)
@@ -252,17 +252,23 @@ def loadConfData(filepath, objList=None, group_variables=True):
                 option_value = cfg[section][option_key]
                 confDict[section][option_key] = formatStringEntry(option_value, option_key, section)
 
-        # Combine sample with obj properties if available
-        if objList is not None:
-            for key_group in GLOBAL_LOCAL_GROUPS:
-                global_group = f'default{key_group}'
-                if global_group in confDict:
-                    for objname in objList:
-                        local_group = f'{objname}{key_group}'
-                        dict_global = copy.deepcopy(confDict[global_group])
-                        if local_group in confDict:
-                            dict_global.update(confDict[local_group])
-                        confDict[local_group] = dict_global
+        if objList_check is True:
+
+            assert 'file_information' in confDict, '- No file_information section in configuration file'
+            assert 'object_list' in confDict['file_information'], '- No object_list option in configuration file'
+            objList = confDict['file_information']['object_list']
+
+            # Combine sample with obj properties if available
+            if objList is not None:
+                for key_group in GLOBAL_LOCAL_GROUPS:
+                    global_group = f'default{key_group}'
+                    if global_group in confDict:
+                        for objname in objList:
+                            local_group = f'{objname}{key_group}'
+                            dict_global = copy.deepcopy(confDict[global_group])
+                            if local_group in confDict:
+                                dict_global.update(confDict[local_group])
+                            confDict[local_group] = dict_global
 
     return confDict
 
@@ -385,9 +391,10 @@ def parseConfList(output_file, param_key, param_value, section_name):
 
 
 # Function to save a parameter dictionary into a cfg dictionary
-def parseConfDict(output_file, param_dict, section_name):
+def parseConfDict(output_file, param_dict, section_name, clear_section=False):
 
     # TODO add logic to erase section previous results
+    # TODO add logic to create a new file from dictionary of dictionaries
 
     # Check if file exists
     if os.path.isfile(output_file):
@@ -398,6 +405,11 @@ def parseConfDict(output_file, param_dict, section_name):
         # Create new configuration object
         output_cfg = configparser.ConfigParser()
         output_cfg.optionxform = str
+
+    # Clear the section upon request
+    if clear_section:
+        if output_cfg.has_section(section_name):
+            output_cfg.remove_section(section_name)
 
     # Add new section if it is not there
     if not output_cfg.has_section(section_name):

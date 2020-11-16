@@ -38,25 +38,13 @@ def gridInterpolatorFunction(interpolatorDict, x_range, y_range, interp_type = '
             emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i_reshape)
             emisInterpGrid[line] = emisInterp_i.evaluate
 
-    # emisInterpGrid = {}
-    #
-    # gridCord_i = tt.drow('gridCord_i')
-    #
-    # for line in interpolatorDict:
-    #     emisInterpGrid[line] = function(inputs=[gridCord_i],
-    #                                     outputs=interpolatorDict[line](gridCord_i),
-    #                                     on_unused_input='ignore')
-    #
-    # return emisInterpGrid
-
-
     return emisInterpGrid
 
 
 def storeValueInTensor(idx, value, tensor1D):
     return tt.inc_subtensor(tensor1D[idx], value)
 
-# theano.tensor.subtensor.IncSubtensor
+
 class EmissionFluxModel:
 
     def __init__(self, label_list, ion_list):
@@ -143,14 +131,6 @@ class EmissionFluxModel:
         recomb = tt.power(10, O3 + 0.9712758 + tt.log10(tt.power(T_high/10000.0, 0.44)) - flambda * cHbeta - 12)
         return tt.log10(col_ext + recomb)
 
-        # return np.log10(np.power(10, abund + emis_ratio - flambda * cHbeta - 12) + np.power(10, O3 + T_high -
-        #                                                                                     flambda * cHbeta - 12))
-
-
-# tt.pow(10, O2_abund + emis_ratio - flambda * cHbeta - 12) + tt.pow(10, O3_abund + 0.9712758487381 + tt.log10(tt.pow(Te_high / 10000.0, 0.44)) - flambda * cHbeta - 12)
-
-
-
 
 class EmissionTensors(EmissionFluxModel):
 
@@ -175,17 +155,3 @@ class EmissionTensors(EmissionFluxModel):
         print('-- done\n')
 
         return
-
-#     def corO2_7319_emisTensor(self, emis_ratio, cHbeta, flambda, O2_abund, O3_abund, Te_high):
-#         fluxCorr = tt.pow(10, O2_abund + emis_ratio - flambda * cHbeta - 12) + tt.pow(10, O3_abund + 0.9712758487381 + tt.log10(tt.pow(Te_high / 10000.0, 0.44)) - flambda * cHbeta - 12)
-#         return fluxCorr
-
-#     def corO2_7319_emisTensor(self, emis_ratio, cHbeta, flambda, O2_abund, O3_abund, Te_high):
-#         fluxCorr = tt.pow(10, O2_abund + emis_ratio - flambda * cHbeta - 12) \
-#                    + tt.pow(10, O3_abund + 0.9712758487381 + tt.log10(
-#             tt.pow(Te_high / 10000.0, 0.44)) - flambda * cHbeta - 12)
-#         return fluxCorr
-
-    # def corO2_7319_emisTensor(self, emis_ratio, cHbeta, flambda, O2_abund, O3_abund, Te_high):
-    #     fluxCorr = tt.pow(10, O2_abund + emis_ratio - flambda * cHbeta - 12) + tt.pow(10, O3_abund + 0.9712758487381 + tt.log10(tt.pow(Te_high / 10000.0, 0.44)) - flambda * cHbeta - 12)
-    #     return fluxCorr

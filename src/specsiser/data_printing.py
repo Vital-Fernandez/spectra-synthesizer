@@ -87,44 +87,85 @@ def int_to_roman(num):
     return roman_num
 
 
-def label_decomposition(lineList, recombAtoms=('H1', 'He1', 'He2'), combined_dict={}):
+def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_dict={}, scalar_output=False):
 
-    ion_array, wave_array, latexLabel_array = ['None'] * len(lineList), np.zeros(len(lineList)), ['None'] * len(lineList)
+    # Confirm input array has one dimension
+    input_lines = np.array(input_lines, ndmin=1)
 
-    for idx, lineLabel in enumerate(lineList):
+    # Containers for input data
+    ion_dict, wave_dict, latexLabel_dict = {}, {}, {}
 
-        latex_label = ''
-        if lineLabel in combined_dict:
-            lineComponents = combined_dict[lineLabel].split('-')
+    for lineLabel in input_lines:
+
+        # Check if line reference corresponds to blended component
+        mixture_line = False
+        if '_b' in lineLabel or '_m' in lineLabel:
+            mixture_line = True
+            if lineLabel in combined_dict:
+                lineRef = combined_dict[lineLabel]
+            else:
+                lineRef = lineLabel[:-2]
         else:
-            lineComponents = lineLabel.split('-')
+            lineRef = lineLabel
 
+        # Split the components if they exists
+        lineComponents = lineRef.split('-')
+
+        # Decomponse each component
+        latexLabel = ''
         for line_i in lineComponents:
 
-            ion = line_i[0:line_i.find('_')]
-            if 'A_' in line_i:
-                wavelength = line_i[line_i.find('_') + 1:-4]
+            # Get ion:
+            if 'r_' in line_i: # Case recombination lines
+                ion = line_i[0:line_i.find('_')-1]
             else:
-                wavelength = line_i[line_i.find('_') + 1:-1]
+                ion = line_i[0:line_i.find('_')]
 
-            units = '\AA'
+            # Get wavelength:
+            wavelength = line_i[line_i.find('_') + 1:-1]
+            units = '\AA' if line_i.endswith('A') else ''
 
+            # Get classical ion notation
             atom, ionization = ion[:-1], int(ion[-1])
             ionizationRoman = int_to_roman(ionization)
 
+            # Define the label
             if ion in recombAtoms:
                 comp_Label = wavelength + units + '\,' + atom + ionizationRoman
             else:
                 comp_Label = wavelength + units + '\,' + '[' + atom + ionizationRoman + ']'
 
-            if len(latex_label) == 0:
-                latex_label += comp_Label
+            # In the case of a mixture line we take the first entry as the reference
+            if mixture_line:
+                if len(latexLabel) == 0:
+                    ion_dict[lineRef] = ion
+                    wave_dict[lineRef] = float(wavelength)
+                    latexLabel += comp_Label
+                else:
+                    latexLabel += '+' + comp_Label
+
+            # This logic will expand the blended lines, but the output list will be larger than the input one
             else:
-                latex_label += '+' + comp_Label
+                ion_dict[line_i] = ion
+                wave_dict[line_i] = float(wavelength)
+                latexLabel_dict[line_i] = '$'+comp_Label+'$'
 
-        ion_array[idx], wave_array[idx], latexLabel_array[idx] = ion, float(wavelength), '$'+latex_label+'$'
+        if mixture_line:
+            latexLabel_dict[lineRef] = '$'+latexLabel +'$'
 
-    return ion_array, wave_array, latexLabel_array
+    # Convert to arrays
+    label_array = np.array([*ion_dict.keys()], ndmin=1)
+    ion_array = np.array([*ion_dict.values()], ndmin=1)
+    wavelength_array = np.array([*wave_dict.values()], ndmin=1)
+    latexLabel_array = np.array([*latexLabel_dict.values()], ndmin=1)
+
+    assert label_array.size == wavelength_array.size, 'Output ions do not match wavelengths size'
+    assert label_array.size == latexLabel_array.size, 'Output ions do not match labels size'
+
+    if ion_array.size == 1 and scalar_output:
+        return ion_array[0], wavelength_array[0], latexLabel_array[0]
+    else:
+        return ion_array, wavelength_array, latexLabel_array
 
 
 def _histplot_bins(column, bins=100):

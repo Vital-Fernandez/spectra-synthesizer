@@ -11,7 +11,7 @@ def import_fits_data(file_address, instrument, frame_idx=0):
         with astrofits.open(file_address) as hdul:
             data, header = hdul[frame_idx].data, hdul[frame_idx].header
 
-        assert 'ISIS' in header['INSTRUME']
+        assert 'ISIS' in header['INSTRUME'], 'Input spectrum instrument '
 
         # William Herschel Telescope ISIS instrument
         if instrument == 'ISIS':
@@ -43,7 +43,7 @@ def import_fits_data(file_address, instrument, frame_idx=0):
         with astrofits.open(file_address) as hdul:
             data, header = hdul[frame_idx].data, hdul[frame_idx].header
 
-        assert 'OSIRIS' in header['INSTRUME']
+        # assert 'OSIRIS' in header['INSTRUME']
 
         w_min = header['CRVAL1']
         dw = header['CD1_1']  # dw (Wavelength interval per pixel)
@@ -70,7 +70,8 @@ def import_fits_data(file_address, instrument, frame_idx=0):
 
         headers = (header_0, header_2, header_3)
 
-        return wave_rest, flux, headers
+        # return wave_rest, flux, headers
+        return wave, data, headers
 
     else:
 
