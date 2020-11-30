@@ -1,17 +1,18 @@
 import os
 import numpy as np
-from collections import OrderedDict
+import pandas as pd
+from os import chdir
+from shutil import copyfile
+from scipy.optimize import nnls
 from scipy.signal.signaltools import convolve2d
 from scipy.interpolate.interpolate import interp1d
-from scipy.optimize import nnls
-from shutil import copyfile
-from os import chdir
 from subprocess import Popen, PIPE, STDOUT
 from matplotlib import pyplot as plt, rcParams, colors, cm, ticker
 
 
 # Reddening law from CCM89 # TODO Replace this methodology to an Import of Pyneb
 def CCM89_Bal07(Rv, wave):
+
     x = 1e4 / wave  # Assuming wavelength is in Amstrongs
     ax = np.zeros(len(wave))
     bx = np.zeros(len(wave))
@@ -56,12 +57,11 @@ def computeSSP_galaxy_mass(mass_uncalibrated, flux_norm, redshift):
 
     return logMass
 
-
-class SspFitter:
+class SspLinearModel:
 
     def __init__(self):
 
-        self.ssp_conf_dict = OrderedDict()
+        self.ssp_conf_dict = {}
 
     def physical_SED_model(self, bases_wave_rest, obs_wave, bases_flux, Av_star, z_star, sigma_star, Rv_coeff=3.4):
 
@@ -124,11 +124,78 @@ class SspFitter:
         return coeffs_0
 
 
-class StarlightWrapper:
+class SSPsynthesizer(SspLinearModel):
 
     def __init__(self):
 
+        SspLinearModel.__init__(self)
+
+        self._basesDB_headers = ['file_name', 'age_yr', 'z_star', 'template_label', 'f_star', 'YAV_flag', 'alpha/Fe',
+                                 'wmin', 'wmax']
+
         return
+
+    def import_STARLIGHT_bases(self, bases_file_address, bases_folder, crop_waves=None, resam_inter=None, norm_waves=None):
+
+        # TODO separate read starlight life from reading the spectra
+        print('\n- Importing STARLIGHT library')
+        print(f'-- Bases file: {bases_file_address}')
+        print(f'-- Bases folder: {bases_folder}')
+
+        bases_df = pd.read_csv(bases_file_address, delim_whitespace=True, names=self._basesDB_headers, skiprows=1)
+        n_bases = len(bases_df.index)
+
+        # Add column with min and max wavelength
+        for header in ['wmin', 'wmax', 'norm_flux']:
+            bases_df[header] = np.nan
+
+        # Loop throught the files and get the wavelengths. They may have different wavelength range
+        for i in np.arange(n_bases):
+
+            # Load the data from the text file
+            template_file = bases_folder/bases_df.iloc[i]['file_name']
+            wave_i, flux_i = np.loadtxt(template_file, unpack=True)
+
+            wmin_i, wmax_i = wave_i[0], wave_i[-1]
+            bases_df.loc[bases_df.index[i], 'wmin'] = wmin_i
+            bases_df.loc[bases_df.index[i], 'wmax'] = wmax_i
+
+            wave_i, flux_i, normFlux_i = self.treat_input_spectrum(wave_i, flux_i, crop_waves, resam_inter, norm_waves)
+            bases_df.loc[bases_df.index[i], 'norm_flux'] = normFlux_i
+
+            # Initiate for the first time according to resampling and cropping size
+            if i == 0:
+                flux_matrix = np.empty((n_bases, wave_i.size))
+            flux_matrix[i, :] = flux_i
+
+        print('--Library imported')
+
+        return bases_df, wave_i, flux_matrix
+
+    def treat_input_spectrum(self, wave, flux, crop_waves=None, resam_inter=None, norm_waves=None):
+
+        # TODO we should remove the nBases requirement by some style which can just read the number of dimensions
+
+        # Establish crop limitts
+        crop_waves = (wave[0], wave[-1]) if crop_waves is None else crop_waves
+
+        # Resampling the spectra
+        if resam_inter is not None:
+            wave_out = np.arange(crop_waves[0], crop_waves[1], resam_inter, dtype=float)
+            flux_out = interp1d(wave, flux, bounds_error=True)(wave_out)
+        else:
+            wave_out = wave
+            flux_out = flux
+
+        # Normalizing the spectra
+        if norm_waves is not None:
+            idx_wmin, idx_wmax = np.searchsorted(wave, norm_waves)
+            normFlux_coeff_i = np.mean(flux[idx_wmin:idx_wmax])
+            flux_out = flux_out / normFlux_coeff_i
+        else:
+            normFlux_coeff_i = 1.0
+
+        return wave_out, flux_out, normFlux_coeff_i
 
     def replace_line(self, file_name, line_num, text):
 
@@ -547,7 +614,7 @@ class StarlightWrapper:
 
                 # Actual sorting
                 labels, handles = zip(*sorted(zip(Old_Labels, Old_Handles), key=lambda t: t[0]))
-                Handles_by_Label = OrderedDict(zip(labels, handles))
+                Handles_by_Label = dict((zip(labels, handles)))
                 ax.legend(Handles_by_Label.values(), Handles_by_Label.keys(), loc='best', ncol=1)
 
         # Format titles

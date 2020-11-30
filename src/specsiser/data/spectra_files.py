@@ -3,7 +3,7 @@ import astropy.io.fits as astrofits
 from mpdaf.obj import Cube
 
 
-def import_fits_data(file_address, instrument, frame_idx=0):
+def import_fits_data(file_address, instrument, frame_idx=None):
 
     if instrument == 'ISIS':
 
@@ -39,6 +39,10 @@ def import_fits_data(file_address, instrument, frame_idx=0):
 
     elif instrument == 'OSIRIS':
 
+        # Default frame index
+        if frame_idx is None:
+            frame_idx = 0
+
         # Open fits file
         with astrofits.open(file_address) as hdul:
             data, header = hdul[frame_idx].data, hdul[frame_idx].header
@@ -72,6 +76,20 @@ def import_fits_data(file_address, instrument, frame_idx=0):
 
         # return wave_rest, flux, headers
         return wave, data, headers
+
+    elif instrument == 'xshooter':
+
+        # Default frame index
+        if frame_idx is None:
+            frame_idx = 1
+
+        # Following the steps at: https://archive.eso.org/cms/eso-data/help/1dspectra.html
+        with astrofits.open(file_address) as hdul:
+            data, header = hdul[1].data, hdul[1].header
+
+        wave = data[0][0]
+
+        return wave, data[0], header
 
     else:
 

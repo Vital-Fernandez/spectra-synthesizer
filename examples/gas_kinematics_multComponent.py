@@ -61,7 +61,7 @@ wave_blue, flux_blue = wave_blue[idx], flux_blue[idx] * factor
 lm.wave, lm.flux = wave_blue, flux_blue
 
 # Remove the continuum
-flux_noContinuum = lm.continuum_remover(noiseWaveLim=noiseLimits, order=1)
+flux_noContinuum = lm.continuum_remover(noiseRegionLims=noiseLimits, order=1)
 continuumFlux = lm.flux - flux_noContinuum
 
 # Plot the spectrum

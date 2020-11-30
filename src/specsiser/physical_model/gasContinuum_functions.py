@@ -200,3 +200,14 @@ class NebularContinua:
         fNeb_cont_lambda = gNeb_cont_nu * lambda_EmLine * flux_Emline / (alfa_eff_alpha * h_cgs * wave * wave)
 
         return fNeb_cont_lambda
+
+    def zanstra_calibration_tt(self, wave, Te, flux_Emline, gNeb_cont_nu, lambda_EmLine=6562.819):
+
+        # Zanstra like calibration for the continuum
+        t4 = Te / 10000.0
+
+        # Pequignot et al. 1991
+        alfa_eff_alpha = 2.708e-13 * np.power(t4, -0.648) / (1 + 1.315 * np.power(t4, 0.523))
+        fNeb_cont_lambda = gNeb_cont_nu * lambda_EmLine * flux_Emline / (alfa_eff_alpha * h_cgs * wave * wave)
+
+        return fNeb_cont_lambda

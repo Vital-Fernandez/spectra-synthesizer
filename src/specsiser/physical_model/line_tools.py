@@ -264,8 +264,8 @@ def redshift_calculation(obs_array, emis_array, unit='wavelength', verbose=False
     return z_array.mean(), z_array.std()
 
 
-def wavelength_to_vel(wave, wave_ref, c=299792.458):
-    return c * (wave/wave_ref)
+def wavelength_to_vel(delta_lambda, lambda_wave, c=299792.458):
+    return c * (delta_lambda/lambda_wave)
 
 
 def save_lineslog(linesDF, file_address):
@@ -292,6 +292,8 @@ class EmissionFitting:
     _cont, _std_continuum = None, None
     _m_continuum, _n_continuum = None, None
     _p1, _p1_Err = None, None
+    _v_r, _v_r_Err = None, None
+    _sigma_vel, _sigma_vel_Err = None, None
     _fit_params, _fit_output = {}, None
     _blended_check, _mixtureComponents = False, None
     _snr_line, _snr_cont = None, None
@@ -302,7 +304,6 @@ class EmissionFitting:
     _AREA_PAR = dict(value=None, min=0, max=np.inf, vary=True, expr=None)
     _SLOPE_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=True, expr=None)
     _INTER_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=True, expr=None)
-
 
     def __init__(self):
 
@@ -316,6 +317,8 @@ class EmissionFitting:
         self.cont, self.std_continuum = self._cont, self._std_continuum
         self.m_continuum, self.n_continuum = self._m_continuum, self._n_continuum
         self.p1, self.p1_Err = self._p1, self._p1_Err
+        self.v_r, self.v_r_Err = self._v_r, self._v_r_Err
+        self.sigma_vel, self.sigma_vel_Err = self._sigma_vel, self._sigma_vel_Err
         self.fit_params, self.fit_output = self._fit_params, self._fit_output
         self.blended_check, self.mixtureComponents = self._blended_check, self._mixtureComponents
         self.snr_line, self.snr_cont = self._snr_line, self._snr_cont
@@ -442,8 +445,8 @@ class EmissionFitting:
         # Define fiting weights according to the error
         if self.errFlux is None:
             weights_array = np.full(idcsFit.sum(), fill_value=1.0/self.std_continuum)
-        # else: # TODO better to give an option introduce the error you want
-        #     weights_array = 1.0/np.sqrt(np.abs(self.errFlux[idcsFit]))
+        else: # TODO better to give an option introduce the error you want
+            weights_array = 1.0/np.sqrt(np.abs(self.errFlux[idcsFit]))
 
         # Run fit
         if algorithm == 'mc':
@@ -474,7 +477,12 @@ class EmissionFitting:
         ion_arr, theoWave_arr, latexLabel_arr = label_decomposition(self.mixtureComponents)
 
         # Define initial wavelength for group
-        ref_wave = np.array([self.peakWave], ndmin=1) if n_comps == 1 else theoWave_arr
+        ref_wave = np.array([self.peakWave], ndmin=1)
+
+        # For blended lines replace the first line reference waves by the peak one
+        if self.blended_check:
+            ref_wave = theoWave_arr
+            ref_wave[0] = self.peakWave
 
         # Define fitting params for each component
         fit_model = Model(linear_model)
@@ -500,16 +508,31 @@ class EmissionFitting:
         # Generate containers for the results
         self.eqw, self.eqwErr = np.empty(n_comps), np.empty(n_comps)
         self.p1, self.p1_Err = np.empty((3, n_comps)), np.empty((3, n_comps))
+        self.v_r, self.v_r_Err = np.empty(n_comps), np.empty(n_comps)
+        self.sigma_vel, self.sigma_vel_Err = np.empty(n_comps), np.empty(n_comps)
         self.lineGaussFlux, self.lineGaussErr = np.empty(n_comps), np.empty(n_comps)
 
-        # Process lmfit container
+        # Store lmfit measurements
         for i, line in enumerate(self.mixtureComponents):
+
+            # Gaussian parameters
             for j, param in enumerate(['_amplitude', '_center', '_sigma']):
                 param_fit = self.fit_output.params[line + param]
                 self.p1[j, i], self.p1_Err[j, i] = param_fit.value, param_fit.stderr
+
+            # Gaussian area
             lineArea = self.fit_output.params[f'{line}_area']
             self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, lineArea.stderr
-            self.eqw[i], self.eqwErr[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
+
+            # Equivalent with gaussian flux for blended components
+            if self.blended_check:
+                self.eqw[i], self.eqwErr[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
+
+            # Kinematics
+            self.v_r[i] = wavelength_to_vel(self.p1[1, i] - ref_wave[i], ref_wave[i])
+            self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], ref_wave[i]))
+            self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], ref_wave[i])
+            self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], ref_wave[i])
 
         return
 
@@ -632,6 +655,8 @@ class EmissionFitting:
         self.cont, self.std_continuum = self._cont, self._std_continuum
         self.m_continuum, self.n_continuum = self._m_continuum, self._n_continuum
         self.p1, self.p1_Err = self._p1, self._p1_Err
+        self.v_r, self.v_r_Err = self._v_r, self._v_r_Err
+        self.sigma_vel, self.sigma_vel_Err = self._sigma_vel, self._sigma_vel_Err
         self.fit_params, self.fit_output = self._fit_params, self._fit_output
         self.blended_check, self.mixtureComponents = self._blended_check, self._mixtureComponents
 
@@ -806,17 +831,18 @@ class LineMesurer(EmissionFitting):
 
                 linesDF.loc[line, 'amp'] = self.p1[0, i] * self.normFlux
                 linesDF.loc[line, 'amp_err'] = self.p1_Err[0, i] * self.normFlux
-                linesDF.loc[line, 'peak_flux'] = (self.p1[0, i] + self.cont) * self.normFlux
 
                 linesDF.loc[line, 'mu'] = self.p1[1, i]
                 linesDF.loc[line, 'mu_err'] = self.p1_Err[1, i]
-                linesDF.loc[line, 'v_r'] = wavelength_to_vel(self.p1[1, i] - waveRef[i], waveRef[i])
-                linesDF.loc[line, 'v_r_err'] = wavelength_to_vel(self.p1[1, i] - self.p1_Err[1, i], waveRef[i])
 
                 linesDF.loc[line, 'sigma'] = self.p1[2, i]
                 linesDF.loc[line, 'sigma_err'] = self.p1_Err[2, i]
-                linesDF.loc[line, 'sigma_vel'] = wavelength_to_vel(self.p1[2, i], waveRef[i])
-                linesDF.loc[line, 'sigma_err_vel'] = wavelength_to_vel(self.p1_Err[2, i], waveRef[i])
+
+                linesDF.loc[line, 'v_r'] = self.v_r[i]
+                linesDF.loc[line, 'v_r_err'] = self.v_r_Err[i]
+
+                linesDF.loc[line, 'sigma_vel'] = self.sigma_vel[i]
+                linesDF.loc[line, 'sigma_err_vel'] = self.sigma_vel_Err[i]
 
                 if self.blended_check:
                     linesDF.loc[line, 'wavelength'] = waveRef[i]
@@ -859,7 +885,7 @@ class LineMesurer(EmissionFitting):
         return
 
     def plot_spectrum_components(self, continuumFlux=None, obsLinesTable=None, matchedLinesDF=None, noise_region=None,
-                                 log_scale=False, plotConf={}, axConf={}):
+                                 log_scale=False, plotConf={}, axConf={}, output_address=None):
 
         # Plot Configuration
         defaultConf = STANDARD_PLOT.copy()
@@ -872,7 +898,7 @@ class LineMesurer(EmissionFitting):
 
         # Plot the continuum if available
         if continuumFlux is not None:
-            ax.plot(self.wave, continuumFlux, label='Error Continuum')
+            ax.step(self.wave, continuumFlux, label='Error Continuum')
 
         # Plot astropy detected lines if available
         if obsLinesTable is not None:
@@ -912,8 +938,15 @@ class LineMesurer(EmissionFitting):
 
         ax.update({**STANDARD_AXES, **axConf})
         ax.legend()
-        plt.tight_layout()
-        plt.show()
+
+        if output_address is None:
+            plt.tight_layout()
+            plt.show()
+        else:
+            plt.savefig(output_address, bbox_inches='tight')
+
+        plt.close(fig)
+
 
         return
 
@@ -1489,6 +1522,8 @@ if __name__ == '__main__':
     ampTrue, muTrue, sigmaTrue = 20, 5007, 2.3
     areaTrue = np.sqrt(2 * np.pi * sigmaTrue ** 2) * ampTrue
     linelabel, wave_regions = 'O3_5007A', np.array([4960, 4980, 4996, 5015, 5030, 5045])
+
+    red_path = '/Users/Dania/Documents/Proyectos/J0838_cubo/gemini_data/red'
 
     # Spectrum generation
     wave = np.linspace(4950, 5050, num=200)

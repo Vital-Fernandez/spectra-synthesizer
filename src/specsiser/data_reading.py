@@ -223,11 +223,12 @@ def loadConfData(filepath, objList_check=False, group_variables=True):
 
     # Open the file
     cfg = importConfigFile(filepath)
+    # TODO keys with array are always converted to numpy array even if just one
 
     if group_variables:
-
-        # Read conversion settings # TODO exclude this metadata from file
-        string_parameter = cfg['conf_entries']['string_conf'].split(',')
+        #
+        # # Read conversion settings # TODO exclude this metadata from file
+        # string_parameter = cfg['conf_entries']['string_conf'].split(',')
 
         # Loop through configuration file sections and merge into a dictionary
         confDict = {}

@@ -147,8 +147,18 @@ def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_
             # This logic will expand the blended lines, but the output list will be larger than the input one
             else:
                 ion_dict[line_i] = ion
-                wave_dict[line_i] = float(wavelength)
-                latexLabel_dict[line_i] = '$'+comp_Label+'$'
+
+                # Estandard blended components
+                if '_' not in wavelength:
+                    wave_dict[line_i] = float(wavelength)
+                    latexLabel_dict[line_i] = '$'+comp_Label+'$'
+
+                # Wide components
+                else:
+                    wave_value = wavelength[0:wavelength.find('_') - 1]
+                    ext_notation = wavelength[wavelength.find('_') - 1:]
+                    wave_dict[line_i] = float(wave_value)
+                    latexLabel_dict[line_i] = '$'+comp_Label+f'_{ext_notation}$'
 
         if mixture_line:
             latexLabel_dict[lineRef] = '$'+latexLabel +'$'
