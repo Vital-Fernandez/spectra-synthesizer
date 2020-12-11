@@ -8,7 +8,7 @@ from src.specsiser.inference_model import displaySimulationData
 import theano.tensor as tt
 import pymc3 as pm
 import arviz as az
-
+import matplotlib.pyplot as plt
 
 def slice_template_grid(db, idcs_db, wave_array, flux_array):
 
@@ -139,6 +139,9 @@ with pm.Model() as model:
             spec_i = stellarBases_interp.evaluate(coord_i)[0]
             spec_tensor += w_prior[i] * spec_i
 
+    # Store computed fluxes
+    pm.Deterministic('spec_tensor', spec_tensor)
+
     # Likelihood
     pm.Normal('continuum', spec_tensor/normFlux_const, err_pixel, observed=flux_obj_norm)
 
@@ -150,8 +153,16 @@ with pm.Model() as model:
 
 print('True values: ', cont_params)
 
-print(az.summary(trace))
-az.plot_trace(trace)
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.step(wave_obj, trace['spec_tensor'].mean(axis=0)/normFlux_const, label='Model continuum')
+ax.step(wave_obj, flux_obj_norm, label='Observed spectrum', linestyle=':')
+ax.set_xlabel(r'$wave (\AA)$')
+ax.set_ylabel(r'$flux norm$')
+ax.legend()
+plt.show()
+
+# print(az.summary(trace))
+# az.plot_trace(trace)
 # plt.show()
 # az.plot_posterior(trace)
 # plt.show()

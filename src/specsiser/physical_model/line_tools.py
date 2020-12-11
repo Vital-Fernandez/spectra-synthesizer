@@ -111,33 +111,6 @@ def define_lmfit_param(param_object, param_label, value=None, user_conf={}):
     return
 
 
-def define_param(model_obj, param_ref, param_value, default_conf={}, user_conf={}):
-
-    # Overwrite default by the one provided by the user
-    if param_ref in user_conf:
-        param_conf = {**default_conf, **user_conf[param_ref]}
-    else:
-        param_conf = default_conf.copy()
-
-    # Set initial value estimation from spectrum if none provided by the user
-    if param_ref in user_conf:
-        if 'value' not in user_conf[param_ref]:
-            param_conf['value'] = param_value
-    else:
-        param_conf['value'] = param_value
-
-    # Special case for the area define the expression
-    if '_area' in param_ref:
-        if (param_conf['expr'] is None) and (param_conf['value'] == param_value):
-            param_conf['value'] = None
-            param_conf['expr'] = f'{param_value}_amplitude*2.5066282746*{param_value}_sigma'
-
-    # Store the parameter in the model
-    model_obj.set_param_hint(param_ref, **param_conf)
-
-    return
-
-
 def gauss_func(ind_params, a, mu, sigma):
     """
     Gaussian function
@@ -474,7 +447,7 @@ class EmissionFitting:
         # Confirm the number of gaussian components
         self.mixtureComponents = np.array(line_label.split('-'), ndmin=1)
         n_comps = self.mixtureComponents.size
-        ion_arr, theoWave_arr, latexLabel_arr = label_decomposition(self.mixtureComponents)
+        ion_arr, theoWave_arr, latexLabel_arr = label_decomposition(self.mixtureComponents, combined_dict=user_conf)
 
         # Define initial wavelength for group
         ref_wave = np.array([self.peakWave], ndmin=1)
@@ -491,15 +464,15 @@ class EmissionFitting:
             # Linear
             if idx_comp == 0:
                 fit_model.prefix = f'{comp}_cont_' # For a blended line the continuum conf is defined by first line
-                define_param(fit_model, f'{comp}_cont_slope', self.m_continuum, self._SLOPE_PAR, user_conf)
-                define_param(fit_model, f'{comp}_cont_intercept', self.n_continuum, self._INTER_PAR, user_conf)
+                self.define_param(fit_model, f'{comp}_cont_slope', self.m_continuum, self._SLOPE_PAR, user_conf)
+                self.define_param(fit_model, f'{comp}_cont_intercept', self.n_continuum, self._INTER_PAR, user_conf)
 
             # Gaussian
             fit_model += Model(gaussian_model, prefix=f'{comp}_')
-            define_param(fit_model, f'{comp}_amplitude', self.peakFlux-self.cont, self._AMP_PAR, user_conf)
-            define_param(fit_model, f'{comp}_center', ref_wave[idx_comp], self._MU_PAR, user_conf)
-            define_param(fit_model, f'{comp}_sigma', 1.0, self._SIG_PAR, user_conf)
-            define_param(fit_model, f'{comp}_area', comp, self._AREA_PAR, user_conf)
+            self.define_param(fit_model, f'{comp}_amplitude', self.peakFlux-self.cont, self._AMP_PAR, user_conf)
+            self.define_param(fit_model, f'{comp}_center', ref_wave[idx_comp], self._MU_PAR, user_conf)
+            self.define_param(fit_model, f'{comp}_sigma', 1.0, self._SIG_PAR, user_conf)
+            self.define_param(fit_model, f'{comp}_area', comp, self._AREA_PAR, user_conf)
 
         # Fit the line
         self.fit_params = fit_model.make_params()
@@ -533,6 +506,74 @@ class EmissionFitting:
             self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], ref_wave[i]))
             self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], ref_wave[i])
             self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], ref_wave[i])
+
+        return
+
+    def define_param(self, model_obj, param_ref, param_value, default_conf={}, user_conf={}):
+
+        # Overwrite default by the one provided by the user
+        if param_ref in user_conf:
+            param_conf = {**default_conf, **user_conf[param_ref]}
+        else:
+            param_conf = default_conf.copy()
+
+        # Set initial value estimation from spectrum if not provided by the user
+        if param_ref not in user_conf:
+            param_conf['value'] = param_value
+
+        else:
+
+            # Special case inequalities: H1_6563A_w1_sigma = '>1.5*H1_6563A_sigma'
+            if param_conf['expr'] is not None:
+                if ('<' in param_conf['expr']) or ('>' in param_conf['expr']):
+
+                    # Create additional parameter
+                    ineq_name = f'{param_ref}_ineq'
+                    ineq_operation = '*' # TODO add remaining operations
+
+                    # Split number and ref
+                    ineq_expr = param_conf['expr'].replace('<','').replace('>','')
+                    ineq_items = ineq_expr.split(ineq_operation)
+                    ineq_linkedParam = ineq_items[0] if not ineq_items[0].isdigit() else ineq_items[1]
+                    ineq_lim = float(ineq_items[0]) if ineq_items[0].isdigit() else float(ineq_items[1])
+
+                    # Stablish the inequality configuration:
+                    ineq_conf = {}
+                    if '>' in param_conf['expr']:
+                        ineq_conf['value'] = ineq_lim * 1.2
+                        ineq_conf['min'] = ineq_lim
+                    else:
+                        ineq_conf['value'] = ineq_lim * 0.8
+                        ineq_conf['max'] = ineq_lim
+
+                    # Define new param
+                    model_obj.set_param_hint(name=ineq_name, **ineq_conf)
+
+                    # Prepare definition of param:
+                    new_expresion = f'{ineq_name}{ineq_operation}{ineq_linkedParam}'
+                    param_conf = dict(expr=new_expresion)
+
+            # Special case inquealities
+            elif 'kinematics' in param_conf:
+                ref_line = param_conf['kinematics']
+                gauss_param = param_ref[param_ref.rfind('_') + 1:]
+                assert ref_line in self.linesDF, f'- ERROR kinematics line {ref_line} has not been measured for {param_ref}'
+                param_conf['value'] = self.linesDF.loc[ref_line, gauss_param]
+                param_conf['vary'] = False
+
+            # Case default value is not provided
+            else:
+                if param_conf['value'] is None:
+                    param_conf['value'] = param_value
+
+        # Special case for the area parameter
+        if '_area' in param_ref:
+            if (param_conf['expr'] is None) and (param_conf['value'] == param_value):
+                param_conf['value'] = None
+                param_conf['expr'] = f'{param_value}_amplitude*2.5066282746*{param_value}_sigma'
+
+        # Assign the parameter configuration to the model
+        model_obj.set_param_hint(param_ref, **param_conf)
 
         return
 
@@ -577,71 +618,6 @@ class EmissionFitting:
         self.p1, self.p1_Err, self.lineGaussFlux, self.lineGaussErr = p1, p1_Err, y_gauss, y_gaussErr
 
         return
-
-    def line_finder(self, input_flux, noiseWaveLim, intLineThreshold=3, verbose=False):
-
-        assert noiseWaveLim[0] > self.wave[0] or noiseWaveLim[1] < self.wave[-1]
-
-        # Establish noise values
-        idcs_noiseRegion = (noiseWaveLim[0] <= self.wave) & (self.wave <= noiseWaveLim[1])
-        noise_region = SpectralRegion(noiseWaveLim[0] * WAVE_UNITS_DEFAULT, noiseWaveLim[1] * WAVE_UNITS_DEFAULT)
-        flux_threshold = intLineThreshold * input_flux[idcs_noiseRegion].std()
-
-        input_spectrum = Spectrum1D(input_flux * FLUX_UNITS_DEFAULT, self.wave * WAVE_UNITS_DEFAULT)
-        input_spectrum = noise_region_uncertainty(input_spectrum, noise_region)
-        linesTable = find_lines_derivative(input_spectrum, flux_threshold)
-
-        if verbose:
-            print(linesTable)
-
-        return linesTable
-
-    def match_lines(self, obsLineTable, theoLineDF, lineType='emission', tol=5, blendedLineList=[], detect_check=False,
-                    find_line_borders = True):
-
-        # Query the lines from the astropy finder tables # TODO Expand technique for absorption lines
-        idcsLineType = obsLineTable['line_type'] == lineType
-        idcsLinePeak = np.array(obsLineTable[idcsLineType]['line_center_index'])
-        waveObs = self.wave[idcsLinePeak]
-
-        # Theoretical wave values
-        waveTheory = theoLineDF.wavelength.values
-
-        # Match the lines with the theoretical emission
-        tolerance = np.diff(self.wave).mean() * tol
-        theoLineDF['observation'] = 'not detected'
-        unidentifiedLine = dict.fromkeys(theoLineDF.columns.values, np.nan)
-
-        for i in np.arange(waveObs.size):
-
-            idx_array = np.where(np.isclose(a=waveTheory, b=waveObs[i], atol=tolerance))
-
-            if len(idx_array[0]) == 0:
-                unknownLineLabel = 'xy_{:.0f}A'.format(np.round(waveObs[i]))
-
-                # Scheme to avoid repeated lines
-                if (unknownLineLabel not in theoLineDF.index) and detect_check:
-                    newRow = unidentifiedLine.copy()
-                    newRow.update({'wavelength': waveObs[i], 'w3': waveObs[i] - 5, 'w4': waveObs[i] + 5,
-                                   'observation': 'not identified'})
-                    theoLineDF.loc[unknownLineLabel] = newRow
-
-            else:
-                row_index = theoLineDF.index[theoLineDF.wavelength == waveTheory[idx_array[0][0]]]
-                theoLineDF.loc[row_index, 'observation'] = 'detected'
-                theoLineLabel = row_index[0]
-
-                if find_line_borders:
-                    minSeparation = 4 if theoLineLabel in blendedLineList else 2
-                    idx_min = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=-1, min_delta=minSeparation)
-                    idx_max = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=1, min_delta=minSeparation)
-                    theoLineDF.loc[row_index, 'w3'] = self.wave[idx_min]
-                    theoLineDF.loc[row_index, 'w4'] = self.wave[idx_max]
-
-        # Sort by wavelength
-        theoLineDF.sort_values('wavelength', inplace=True)
-
-        return theoLineDF
 
     def reset_measuerement(self):
 
@@ -784,6 +760,71 @@ class LineMesurer(EmissionFitting):
         self.results_to_database(self.lineLabel, self.linesDF, fit_conf)
 
         return
+
+    def match_lines(self, obsLineTable, theoLineDF, lineType='emission', tol=5, blendedLineList=[], detect_check=False,
+                    find_line_borders=True):
+
+        # Query the lines from the astropy finder tables # TODO Expand technique for absorption lines
+        idcsLineType = obsLineTable['line_type'] == lineType
+        idcsLinePeak = np.array(obsLineTable[idcsLineType]['line_center_index'])
+        waveObs = self.wave[idcsLinePeak]
+
+        # Theoretical wave values
+        waveTheory = theoLineDF.wavelength.values
+
+        # Match the lines with the theoretical emission
+        tolerance = np.diff(self.wave).mean() * tol
+        theoLineDF['observation'] = 'not detected'
+        unidentifiedLine = dict.fromkeys(theoLineDF.columns.values, np.nan)
+
+        for i in np.arange(waveObs.size):
+
+            idx_array = np.where(np.isclose(a=waveTheory, b=waveObs[i], atol=tolerance))
+
+            if len(idx_array[0]) == 0:
+                unknownLineLabel = 'xy_{:.0f}A'.format(np.round(waveObs[i]))
+
+                # Scheme to avoid repeated lines
+                if (unknownLineLabel not in theoLineDF.index) and detect_check:
+                    newRow = unidentifiedLine.copy()
+                    newRow.update({'wavelength': waveObs[i], 'w3': waveObs[i] - 5, 'w4': waveObs[i] + 5,
+                                   'observation': 'not identified'})
+                    theoLineDF.loc[unknownLineLabel] = newRow
+
+            else:
+                row_index = theoLineDF.index[theoLineDF.wavelength == waveTheory[idx_array[0][0]]]
+                theoLineDF.loc[row_index, 'observation'] = 'detected'
+                theoLineLabel = row_index[0]
+
+                if find_line_borders:
+                    minSeparation = 4 if theoLineLabel in blendedLineList else 2
+                    idx_min = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=-1, min_delta=minSeparation)
+                    idx_max = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=1, min_delta=minSeparation)
+                    theoLineDF.loc[row_index, 'w3'] = self.wave[idx_min]
+                    theoLineDF.loc[row_index, 'w4'] = self.wave[idx_max]
+
+        # Sort by wavelength
+        theoLineDF.sort_values('wavelength', inplace=True)
+
+        return theoLineDF
+
+    def line_finder(self, input_flux, noiseWaveLim, intLineThreshold=3, verbose=False):
+
+        assert noiseWaveLim[0] > self.wave[0] or noiseWaveLim[1] < self.wave[-1]
+
+        # Establish noise values
+        idcs_noiseRegion = (noiseWaveLim[0] <= self.wave) & (self.wave <= noiseWaveLim[1])
+        noise_region = SpectralRegion(noiseWaveLim[0] * WAVE_UNITS_DEFAULT, noiseWaveLim[1] * WAVE_UNITS_DEFAULT)
+        flux_threshold = intLineThreshold * input_flux[idcs_noiseRegion].std()
+
+        input_spectrum = Spectrum1D(input_flux * FLUX_UNITS_DEFAULT, self.wave * WAVE_UNITS_DEFAULT)
+        input_spectrum = noise_region_uncertainty(input_spectrum, noise_region)
+        linesTable = find_lines_derivative(input_spectrum, flux_threshold)
+
+        if verbose:
+            print(linesTable)
+
+        return linesTable
 
     def results_to_database(self, lineLabel, linesDF, fit_conf, **kwargs):
 
@@ -1310,8 +1351,7 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def table_fluxes(self, lines_df, tex_address, txt_address, pyneb_rc, tableHeaders=FLUX_TXT_TABLE_HEADERS,
-                     scaleTable=1000):
+    def table_fluxes(self, lines_df, tex_address, txt_address, pyneb_rc, scaleTable=1000):
 
         # TODO this could be included in sr.print
 

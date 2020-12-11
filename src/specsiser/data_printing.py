@@ -7,7 +7,7 @@ from matplotlib import cm
 from matplotlib import rcParams
 from matplotlib import colors
 from matplotlib.mlab import detrend_mean
-from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Section, Tabu, Table, LongTable
+from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Section, Tabu, Table, LongTable, MultiColumn, MultiRow, utils
 from functools import partial
 from collections import Sequence
 from scipy import stats as st
@@ -121,9 +121,16 @@ def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_
             else:
                 ion = line_i[0:line_i.find('_')]
 
-            # Get wavelength:
-            wavelength = line_i[line_i.find('_') + 1:-1]
-            units = '\AA' if line_i.endswith('A') else ''
+            # Get wavelength and their units # TODO add more units and more facilities for extensions
+            ext_n = line_i.count('_')
+            if (line_i.endswith('A')) or (ext_n > 1):
+                wavelength = line_i[line_i.find('_') + 1:line_i.rfind('A')]
+                units = '\AA'
+                ext = f'-{line_i[line_i.rfind("_")+1:]}' if ext_n > 1 else ''
+            else:
+                wavelength = line_i[line_i.find('_') + 1:]
+                units = ''
+                ext = ''
 
             # Get classical ion notation
             atom, ionization = ion[:-1], int(ion[-1])
@@ -131,9 +138,9 @@ def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_
 
             # Define the label
             if ion in recombAtoms:
-                comp_Label = wavelength + units + '\,' + atom + ionizationRoman
+                comp_Label = wavelength + units + '\,' + atom + ionizationRoman + ext
             else:
-                comp_Label = wavelength + units + '\,' + '[' + atom + ionizationRoman + ']'
+                comp_Label = wavelength + units + '\,' + '[' + atom + ionizationRoman + ']' + ext
 
             # In the case of a mixture line we take the first entry as the reference
             if mixture_line:
@@ -147,18 +154,8 @@ def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_
             # This logic will expand the blended lines, but the output list will be larger than the input one
             else:
                 ion_dict[line_i] = ion
-
-                # Estandard blended components
-                if '_' not in wavelength:
-                    wave_dict[line_i] = float(wavelength)
-                    latexLabel_dict[line_i] = '$'+comp_Label+'$'
-
-                # Wide components
-                else:
-                    wave_value = wavelength[0:wavelength.find('_') - 1]
-                    ext_notation = wavelength[wavelength.find('_') - 1:]
-                    wave_dict[line_i] = float(wave_value)
-                    latexLabel_dict[line_i] = '$'+comp_Label+f'_{ext_notation}$'
+                wave_dict[line_i] = float(wavelength)
+                latexLabel_dict[line_i] = '$'+comp_Label+'$'
 
         if mixture_line:
             latexLabel_dict[lineRef] = '$'+latexLabel +'$'
@@ -223,6 +220,59 @@ def printSimulationData(model, priorsDict, lineLabels, lineFluxes, lineErr, line
     print(model.check_test_point())
 
     return
+
+
+def format_for_table(entry, rounddig=4, rounddig_er=2, scientific_notation=False, nan_format='-'):
+
+    if rounddig_er == None: #TODO declare a universal tool
+        rounddig_er = rounddig
+
+    # Check None entry
+    if entry != None:
+
+        # Check string entry
+        if isinstance(entry, (str, bytes)):
+            formatted_entry = entry
+
+        elif isinstance(entry, (MultiColumn, MultiRow, utils.NoEscape)):
+            formatted_entry = entry
+
+        # Case of Numerical entry
+        else:
+
+            # Case of an array
+            scalarVariable = True
+            if isinstance(entry, (Sequence, np.ndarray)):
+
+                # Confirm is not a single value array
+                if len(entry) == 1:
+                    entry = entry[0]
+                # Case of an array
+                else:
+                    scalarVariable = False
+                    formatted_entry = '_'.join(entry)  # we just put all together in a "_' joined string
+
+            # Case single scalar
+            if scalarVariable:
+
+                # Case with error quantified # TODO add uncertainty protocol for table
+                # if isinstance(entry, UFloat):
+                #     formatted_entry = round_sig(nominal_values(entry), rounddig,
+                #                                 scien_notation=scientific_notation) + r'$\pm$' + round_sig(
+                #         std_devs(entry), rounddig_er, scien_notation=scientific_notation)
+
+                # Case single float
+                if np.isnan(entry):
+                    formatted_entry = nan_format
+
+                # Case single float
+                else:
+                    formatted_entry = numberStringFormat(entry, rounddig)
+    else:
+        # None entry is converted to None
+        formatted_entry = 'None'
+
+    return formatted_entry
 
 
 class FigConf:
@@ -457,7 +507,9 @@ class PdfPrinter():
                 with self.pdfDoc.create(Tabu(table_format)) as self.table:
                     if column_headers != None:
                         self.table.add_hline()
-                        self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
+                        # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
+                        output_row = list(map(partial(format_for_table), column_headers))
+                        self.table.add_row(output_row)
                         if addfinalLine:
                             self.table.add_hline()
 
@@ -511,7 +563,7 @@ class PdfPrinter():
 
         # Default formatting
         if row_format == 'auto':
-            output_row = list(map(partial(self.format_for_table, rounddig=rounddig), input_row))
+            output_row = list(map(partial(format_for_table, rounddig=rounddig), input_row))
 
         # Append the row
         self.table.add_row(output_row, escape=False, strict=False)
@@ -519,55 +571,6 @@ class PdfPrinter():
         # Case of the final row just add one line
         if last_row:
             self.table.add_hline()
-
-    def format_for_table(self, entry, rounddig=4, rounddig_er=2, scientific_notation=False, nan_format='-'):
-
-        if rounddig_er == None: #TODO declare a universal tool
-            rounddig_er = rounddig
-
-        # Check None entry
-        if entry != None:
-
-            # Check string entry
-            if isinstance(entry, (str, bytes)):
-                formatted_entry = entry
-
-            # Case of Numerical entry
-            else:
-
-                # Case of an array
-                scalarVariable = True
-                if isinstance(entry, (Sequence, np.ndarray)):
-
-                    # Confirm is not a single value array
-                    if len(entry) == 1:
-                        entry = entry[0]
-                    # Case of an array
-                    else:
-                        scalarVariable = False
-                        formatted_entry = '_'.join(entry)  # we just put all together in a "_' joined string
-
-                # Case single scalar
-                if scalarVariable:
-
-                    # Case with error quantified # TODO add uncertainty protocol for table
-                    # if isinstance(entry, UFloat):
-                    #     formatted_entry = round_sig(nominal_values(entry), rounddig,
-                    #                                 scien_notation=scientific_notation) + r'$\pm$' + round_sig(
-                    #         std_devs(entry), rounddig_er, scien_notation=scientific_notation)
-
-                    # Case single float
-                    if np.isnan(entry):
-                        formatted_entry = nan_format
-
-                    # Case single float
-                    else:
-                        formatted_entry = numberStringFormat(entry, rounddig)
-        else:
-            # None entry is converted to None
-            formatted_entry = 'None'
-
-        return formatted_entry
 
     def fig_to_pdf(self, label=None, fig_loc='htbp', width=r'1\textwidth', add_page=False, *args, **kwargs):
 
