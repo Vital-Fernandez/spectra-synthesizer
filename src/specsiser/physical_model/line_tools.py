@@ -479,7 +479,7 @@ class EmissionFitting:
         self.fit_output = fit_model.fit(y, self.fit_params, x=x, weights=weights)
 
         # Generate containers for the results
-        self.eqw, self.eqwErr = np.empty(n_comps), np.empty(n_comps)
+        eqw_g, eqwErr_g = np.empty(n_comps), np.empty(n_comps)
         self.p1, self.p1_Err = np.empty((3, n_comps)), np.empty((3, n_comps))
         self.v_r, self.v_r_Err = np.empty(n_comps), np.empty(n_comps)
         self.sigma_vel, self.sigma_vel_Err = np.empty(n_comps), np.empty(n_comps)
@@ -499,13 +499,18 @@ class EmissionFitting:
 
             # Equivalent with gaussian flux for blended components
             if self.blended_check:
-                self.eqw[i], self.eqwErr[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
+                eqw_g[i], eqwErr_g[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
 
             # Kinematics
             self.v_r[i] = wavelength_to_vel(self.p1[1, i] - ref_wave[i], ref_wave[i])
             self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], ref_wave[i]))
             self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], ref_wave[i])
             self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], ref_wave[i])
+
+        if self.blended_check:
+            self.eqw, self.eqwErr = eqw_g, eqwErr_g
+        else:
+            self.eqw, self.eqwErr = np.array(self.eqw, ndmin=1), np.array(self.eqwErr, ndmin=1)
 
         return
 

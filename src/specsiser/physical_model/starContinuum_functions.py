@@ -57,6 +57,7 @@ def computeSSP_galaxy_mass(mass_uncalibrated, flux_norm, redshift):
 
     return logMass
 
+
 class SspLinearModel:
 
     def __init__(self):
@@ -313,8 +314,7 @@ class SSPsynthesizer(SspLinearModel):
         v0_start = v_vector[1]
         vd_start = v_vector[2]
 
-        files_row = [Sl_Input_Filename, configFile, BaseDataFile, maskFileName, Redlaw, v0_start, vd_start,
-                    Sl_Output_Filename]
+        files_row = [Sl_Input_Filename, configFile, BaseDataFile, maskFileName, Redlaw, v0_start, vd_start, Sl_Output_Filename]
 
         GridLines.append(files_row)
 
