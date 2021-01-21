@@ -460,7 +460,7 @@ class SSPsynthesizer(SspLinearModel):
     def starlight_launcher(self, gridFile, executable_folder='/home/vital/'):
 
         chdir(executable_folder)
-        print(f'-- Runing folder: {os.getcwd()} {executable_folder==os.getcwd()}')
+        print(f'-- Runing folder: {os.getcwd()} {str(executable_folder)==os.getcwd()}')
         Command = './StarlightChains_v04.exe < ' + str(gridFile)
 
         print(f'-- Launching: {Command}')
