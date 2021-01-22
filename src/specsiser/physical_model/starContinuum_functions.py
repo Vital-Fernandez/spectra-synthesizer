@@ -473,7 +473,7 @@ class SSPsynthesizer(SspLinearModel):
 
         return
 
-    def stellar_fit_comparison_plot(self, objName, inWave, inFlux, outFlux, outputFileAddress):
+    def stellar_fit_comparison_plot(self, objName, inWave, inFlux, outFlux, outputFileAddress=None):
 
         labelsDict = {'xlabel': r'Wavelength $(\AA)$',
                       'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})\cdot10^{20}$',
