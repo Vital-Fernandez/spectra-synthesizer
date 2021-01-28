@@ -589,7 +589,6 @@ class EmissionFitting:
                 param_conf['expr'] = f'{param_value}_amplitude*2.5066282746*{param_value}_sigma'
 
         # Assign the parameter configuration to the model
-        print('-- ', param_ref, param_conf)
         model_obj.set_param_hint(param_ref, **param_conf)
 
         return
