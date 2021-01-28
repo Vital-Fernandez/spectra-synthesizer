@@ -203,19 +203,22 @@ def int_to_roman(num):
 
 
 def lineslogFile_to_DF(lineslog_address):
-    '''
-    This function includes serveral techniques to import an excel or text file lines log as a dataframe
-    :param lineslog_address:
-    :return:
-    '''
+    """
+    This function attemps several approaches to import a lines log from a sheet or text file lines as a pandas
+    dataframe
+    :param lineslog_address: String with the location of the input lines log file
+    :return lineslogDF: Dataframe with line labels as index and default column headers (wavelength, w1 to w6)
+    """
 
-    # Text files
+    # Text file
     try:
         lineslogDF = pd.read_csv(lineslog_address, delim_whitespace=True, header=0, index_col=0)
-    except:
+    except ValueError:
+
+        # Excel file
         try:
             lineslogDF = pd.read_excel(lineslog_address, sheet_name=0, header=0, index_col=0)
-        except:
+        except ValueError:
             print(f'- ERROR: Could not open lines log at: {lineslog_address}')
 
     return lineslogDF
@@ -248,6 +251,14 @@ def save_lineslog(linesDF, file_address):
         output_file.write(string_DF.encode('UTF-8'))
 
     return
+
+
+def isDigit(x):
+    try:
+        float(x)
+        return True
+    except ValueError:
+        return False
 
 
 class EmissionFitting:
@@ -539,11 +550,11 @@ class EmissionFitting:
                     # Split number and ref
                     ineq_expr = param_conf['expr'].replace('<','').replace('>','')
                     ineq_items = ineq_expr.split(ineq_operation)
-                    ineq_linkedParam = ineq_items[0] if not ineq_items[0].isdigit() else ineq_items[1]
-                    ineq_lim = float(ineq_items[0]) if ineq_items[0].isdigit() else float(ineq_items[1])
+                    ineq_linkedParam = ineq_items[0] if not isDigit(ineq_items[0]) else ineq_items[1]
+                    ineq_lim = float(ineq_items[0]) if isDigit(ineq_items[0]) else float(ineq_items[1])
 
                     # Stablish the inequality configuration:
-                    ineq_conf = {}
+                    ineq_conf = {} # TODO need to check these limits
                     if '>' in param_conf['expr']:
                         ineq_conf['value'] = ineq_lim * 1.2
                         ineq_conf['min'] = ineq_lim
@@ -578,6 +589,7 @@ class EmissionFitting:
                 param_conf['expr'] = f'{param_value}_amplitude*2.5066282746*{param_value}_sigma'
 
         # Assign the parameter configuration to the model
+        print('-- ', param_ref, param_conf)
         model_obj.set_param_hint(param_ref, **param_conf)
 
         return
@@ -664,17 +676,22 @@ class LineMesurer(EmissionFitting):
             if input_err is not None:
                 input_err = input_err[idcs_cropping]
 
-        # Import object spectrum
-        self.redshift = redshift if redshift is not None else self._redshift
-        self.normFlux = normFlux if normFlux is not None else self._normFlux
-        self.wave_units = wave_units # TODO Add flexibility for wave changes
+        # Import object spectrum # TODO Add flexibility for wave changes
+        self.wave_units = wave_units
 
         # Apply the redshift correction
+        self.redshift = redshift if redshift is not None else self._redshift
         if (input_wave is not None) and (input_flux is not None):
             self.wave = input_wave / (1 + self.redshift)
-            self.flux = input_flux * (1 + self.redshift) / self.normFlux
+            self.flux = input_flux * (1 + self.redshift)
             if input_err is not None:
-                self.errFlux = input_err * (1 + self.redshift) / self.normFlux
+                self.errFlux = input_err * (1 + self.redshift)
+
+        # Normalize the spectrum
+        self.normFlux = normFlux if normFlux is not None else self._normFlux
+        self.flux = self.flux / self.normFlux
+        if input_err is not None:
+            self.errFlux = self.errFlux / self._normFlux
 
         # Generate empty dataframe to store measurement use cwd as default storing folder
         if linesDF_address is None:
@@ -1022,18 +1039,18 @@ class LineMesurer(EmissionFitting):
             # Plot individual components
             for comp_label, comp_flux in flux_resample.items():
                 ax.plot(wave_resample, comp_flux, label=f'{comp_label}', linestyle='--')
-        else:
-            # Plot selection regions
-            idcsW = np.searchsorted(self.wave, self.lineWaves)
-            ax.fill_between(self.wave[idcsW[0]:idcsW[1]], 0, self.flux[idcsW[0]:idcsW[1]], facecolor='tab:orange',
-                            step="pre",
-                            alpha=0.2)
-            ax.fill_between(self.wave[idcsW[2]:idcsW[3]], 0, self.flux[idcsW[2]:idcsW[3]], facecolor='tab:green',
-                            step="pre",
-                            alpha=0.2)
-            ax.fill_between(self.wave[idcsW[4]:idcsW[5]], 0, self.flux[idcsW[4]:idcsW[5]], facecolor='tab:orange',
-                            step="pre",
-                            alpha=0.2)
+        # else:
+        # Plot selection regions
+        idcsW = np.searchsorted(self.wave, self.lineWaves)
+        ax.fill_between(self.wave[idcsW[0]:idcsW[1]], 0, self.flux[idcsW[0]:idcsW[1]], facecolor='tab:orange',
+                        step="pre",
+                        alpha=0.2)
+        ax.fill_between(self.wave[idcsW[2]:idcsW[3]], 0, self.flux[idcsW[2]:idcsW[3]], facecolor='tab:green',
+                        step="pre",
+                        alpha=0.2)
+        ax.fill_between(self.wave[idcsW[4]:idcsW[5]], 0, self.flux[idcsW[4]:idcsW[5]], facecolor='tab:orange',
+                        step="pre",
+                        alpha=0.2)
 
         defaultConf = STANDARD_AXES.copy()
         defaultConf.update(ax_conf)

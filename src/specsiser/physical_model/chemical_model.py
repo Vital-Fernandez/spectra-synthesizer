@@ -416,23 +416,24 @@ class Standard_DirectMetchod:
 
         # ne_S2_pm2017
         if 'R_S2' in self.electron_params:
-            if 'Te_O3_pm2017' in  self.electron_params:
+            if 'Te_O3_pm2017' in self.electron_params:
                 R_S2 = self.electron_params['R_S2']
                 Te = self.electron_params['Te_O3_pm2017']
                 a0 = 16.054 - 7.79/Te - 11.32 * Te
                 a1 = -22.66 + 11.08/Te + 16.02 * Te
                 b0 = -21.61 + 11.89/Te + 14.59 * Te
-                b1 = 9.17 - 5.09/Te + 6.18 * Te
+                b1 = 9.17 - 5.09/Te - 6.18 * Te
                 self.electron_params['ne_S2_pm2017'] = 1000 * (R_S2 * a0 + a1) / (R_S2 * b0 + b1)
 
         # Te_O2_pm2017
         if 'R_O2' in self.electron_params:
+            R_O2 = self.electron_params['R_O2']
             ne = self.electron_params['ne_S2_pm2017']
             a0 = 0.2526 - 0.000357*ne - 0.43/ne
             a1 = 0.00136 + 0.00481/ne
-            a2 = 35.624 - 0.0172 * ne + 25.12/ne
-            self.electron_params['Te_O2_pm2017'] = (a0 - a1 * R_S2_dash + a2 / R_S2_dash + a3 / np.power(R_S2_dash,
-                                                                                                          2)) * 10000
+            a2 = 35.624 - 0.0172 * ne - 25.12/ne
+            self.electron_params['Te_O2_pm2017'] = (a0 - a1 * R_O2 + a2 / R_O2) * 10000
+
         # T_N2_pm2017
         if 'R_N2' in self.electron_params:
             R_N2 = self.electron_params['R_N2']
@@ -441,17 +442,17 @@ class Standard_DirectMetchod:
         # T_S3_pm2017
         if 'R_S3' in self.electron_params:
             R_S3 = self.electron_params['R_S3']
-            self.electron_params['Te_S3_pm2017'] = (0.5147 - 0.0003187 * R_S3 + 23.64041/R_S3) * 10000
+            self.electron_params['Te_S3_pm2017'] = (0.5147 + 0.0003187 * R_S3 + 23.64041/R_S3) * 10000
 
         # T_S2_pm2017
         if 'R_S2_dash' in self.electron_params:
-            if 'ne_S2_pm2017' in  self.electron_params:
-                R_S2_dash = (int_dict['S2_6716A'] + int_dict['S2_6731A']) / (1.333 * int_dict['S2_6731A'])
+            if 'ne_S2_pm2017' in self.electron_params:
+                R_S2_dash = (int_dict['S2_6716A'] + int_dict['S2_6731A']) / (1.333 * int_dict['S2_4068A'])
                 ne = self.electron_params['ne_S2_pm2017']
                 a0 = 0.99 + 34.79/ne + 321.82/np.power(ne, 2)
                 a1 = -0.0087 + 0.628/ne + 5.744/np.power(ne, 2)
-                a2 = -7.123 + 926.5/ne + 94.78/np.power(ne, 2)
-                a3 = 102.82 + 768.852/ne + 5113.0/np.power(ne, 2)
+                a2 = -7.123 + 926.5/ne - 94.78/np.power(ne, 2)
+                a3 = 102.82 + 768.852/ne - 5113.0/np.power(ne, 2)
                 self.electron_params['Te_S2_pm2017'] = (a0 - a1 * R_S2_dash + a2/R_S2_dash + a3/np.power(R_S2_dash, 2)) * 10000
 
         return
@@ -576,7 +577,7 @@ class Standard_DirectMetchod:
 
         return
 
-    def save_measurments(self, file_address, prefix='', nan_max=0.05, ):
+    def save_measurments(self, file_address, prefix='', nan_max=0.05):
 
         ratios_output = {}
         for ratio_label, ratio_value in self.obs_ratios.items():
