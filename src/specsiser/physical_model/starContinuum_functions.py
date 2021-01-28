@@ -629,6 +629,39 @@ class SSPsynthesizer(SspLinearModel):
 
         return
 
+    def mask_plot(self, fit_output, objName, objWave, objFlux, Input_Wavelength, Input_Flux, maskFile, outputAddress=None):
+
+        labelsDict = {'xlabel': r'Wavelength $(\AA)$',
+                      'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
+                      'title': f'Galaxy {objName} stellar continuum fit'}
+
+        # Mask plots
+        iniPoints, endPoints, tag = np.loadtxt(maskFile, skiprows=1, usecols=(0, 1, 2), unpack=True)
+        label = np.loadtxt(maskFile, skiprows=1, usecols=(3), unpack=True, dtype=str)
+
+        # Plot spectra components
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.plot(objWave, objFlux, label='Object flux no nebular component')
+        ax.plot(Input_Wavelength, Input_Flux, label='Starlight input spectrum', color='tab:green', linestyle=':')
+
+        for idx in np.arange(iniPoints.size):
+            ax.axvspan(iniPoints[idx], endPoints[idx], alpha=0.25, color='tab:orange')
+
+        ax.scatter(fit_output['ClippedPixels'][0], fit_output['ClippedPixels'][1], color='tab:purple', label='Clipped pixels')
+        ax.scatter(fit_output['FlagPixels'][0], fit_output['FlagPixels'][1], color='tab:red', label='FlagPixels pixels')
+
+        ax.update(labelsDict)
+        ax.legend()
+        ax.set_yscale('log')
+
+        if outputAddress is None:
+            plt.tight_layout()
+            plt.show()
+        else:
+            plt.savefig(outputAddress, bbox_inches='tight')
+
+        return
+
     def gen_colorList(self, vmin=0.0, vmax=1.0, color_palette=None):
         self.colorNorm = colors.Normalize(vmin, vmax)
         self.cmap = cm.get_cmap(name=color_palette)
