@@ -412,7 +412,7 @@ class Standard_DirectMetchod:
         # Te_O3_pm2017
         if 'R_O3' in self.electron_params:
             R_O3 = self.electron_params['R_O3']
-            self.electron_params['Te_O3_pm2017'] = (0.7840 - 0.0001357 * R_O3 + 48.44/R_O3) * 10000
+            self.electron_params['Te_O3_pm2017'] = (0.7840 - 0.0001357 * (1/R_O3) + 48.44/(1/R_O3)) * 10000
 
         # ne_S2_pm2017
         if 'R_S2' in self.electron_params:

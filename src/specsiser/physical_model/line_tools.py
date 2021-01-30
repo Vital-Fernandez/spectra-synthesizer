@@ -506,7 +506,13 @@ class EmissionFitting:
 
             # Gaussian area
             lineArea = self.fit_output.params[f'{line}_area']
-            self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, lineArea.stderr
+            # TODO we need a robest mechanic to express the uncertainty in the N2_6548A and similar lines
+            if line != 'N2_6548A':
+                self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, lineArea.stderr
+            elif (lineArea.stderr == 0) and ('N2_6584A_area' in self.fit_output.params):
+                self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, self.fit_output.params['N2_6584A_area'].stderr/2.5066282746
+            else:
+                self.lineGaussFlux[i], self.lineGaussErr[i] = lineArea.value, lineArea.stderr
 
             # Equivalent with gaussian flux for blended components
             if self.blended_check:
