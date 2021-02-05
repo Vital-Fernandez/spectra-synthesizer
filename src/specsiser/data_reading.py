@@ -619,6 +619,12 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
         else:
             outputDF.loc[linelabel, 'ion'] = ion_array[0]
 
+    # TODO we must stick to one format!!
+    for ion_old in ('H1', 'He1', 'He2'):
+        if ion_old in outputDF.ion.values:
+            idcs_old = outputDF.ion == ion_old
+            outputDF.loc[idcs_old, 'ion'] = ion_old + 'r'
+
     return outputDF
 
 
