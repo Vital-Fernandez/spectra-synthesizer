@@ -237,7 +237,7 @@ class SSPsynthesizer(SspLinearModel):
 
         return sigma_line
 
-    def generate_starlight_files(self, starlight_Folder, objName, X, Y, regionsDF, v_vector=None):
+    def generate_starlight_files(self, starlight_Folder, objName, X, Y, regionsDF, v_vector=None, clip_value=3):
 
         Default_InputFolder = starlight_Folder/'Obs'
         Default_MaskFolder = starlight_Folder/'Masks'
@@ -255,6 +255,10 @@ class SSPsynthesizer(SspLinearModel):
         sigma = self.ImportDispersionVelocity(regionsDF)
         UpperVelLimit = str(round(sigma, 1)) + '      [vd_upp (km/s)]     = upper allowed vd\n'
         self.replace_line(starlight_Folder/configFile, 21, UpperVelLimit)
+
+        #Establishing clip value
+        clip_value = f'{clip_value:.1f}          [sig_clip_threshold]             = clip points which deviate > than this # of sigmas\n'
+        self.replace_line(starlight_Folder/configFile, 27, clip_value)
 
         # -----------------------Generating input spectra Textfile---------------------------------
         Interpolation = interp1d(X, Y, kind='slinear')
@@ -490,26 +494,6 @@ class SSPsynthesizer(SspLinearModel):
 
     def stellar_fit_comparison_plot(self, objName, wave, flux, nebCompFile, stellarFluxFile, outputFileAddress=None):
 
-        # labelsDict = {'xlabel': r'Wavelength $(\AA)$',
-        #               'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})\cdot10^{20}$',
-        #               'title': f'Galaxy {objName} stellar continuum fitting'}
-        #
-        # idcs_plot = inFlux > 0.0
-        #
-        # fig, ax = plt.subplots(figsize=(12, 8))
-        # ax.plot(inWave[idcs_plot], inFlux[idcs_plot], label='Input starlight flux')
-        # ax.plot(inWave[idcs_plot], outFlux[idcs_plot], label='Output starlight fitting')
-        # ax.update(labelsDict)
-        # ax.legend()
-        # ax.set_yscale('log')
-        #
-        # if outputFileAddress is None:
-        #     plt.show()
-        # else:
-        #     plt.savefig(outputFileAddress, bbox_inches='tight')
-
-        # Clear the image
-
         labelsDict = {'xlabel': r'Wavelength $(\AA)$',
                       'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
                       'title': f'Galaxy {objName} spectrum components'}
@@ -528,10 +512,10 @@ class SSPsynthesizer(SspLinearModel):
         ax.set_yscale('log')
         plt.tight_layout()
 
-        # if outputFileAddress is None:
-        #     plt.show()
-        # else:
-        #     plt.savefig(outputFileAddress, bbox_inches='tight')
+        if outputFileAddress is None:
+            plt.show()
+        else:
+            plt.savefig(outputFileAddress, bbox_inches='tight')
 
         plt.close(fig)
 
@@ -669,7 +653,7 @@ class SSPsynthesizer(SspLinearModel):
 
         return
 
-    def mask_plot(self, fit_output, objName, objWave, objFlux, Input_Wavelength, Input_Flux, maskFile, outputAddress=None):
+    def mask_plot(self, fit_output, objName, objWave, objFlux, Input_Wavelength, stellar_flux, Input_Flux, maskFile, outputAddress=None):
 
         labelsDict = {'xlabel': r'Wavelength $(\AA)$',
                       'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
@@ -683,6 +667,7 @@ class SSPsynthesizer(SspLinearModel):
         fig, ax = plt.subplots(figsize=(12, 8))
         ax.plot(objWave, objFlux, label='Object flux no nebular component')
         ax.plot(Input_Wavelength, Input_Flux, label='Starlight input spectrum', color='tab:green', linestyle=':')
+        ax.plot(Input_Wavelength, stellar_flux, label='Stellar fit', color='tab:green', linestyle=':')
 
         for idx in np.arange(iniPoints.size):
             ax.axvspan(iniPoints[idx], endPoints[idx], alpha=0.25, color='tab:orange')
