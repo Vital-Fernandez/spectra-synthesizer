@@ -228,12 +228,12 @@ class SSPsynthesizer(SspLinearModel):
         O3_5007_sigma = linesLogDF.loc['O3_5007A', 'sigma'] if 'O3_5007A' in linesLogDF.index else None
         Hbeta_sigma = linesLogDF.loc['H1_4861A', 'sigma'] if 'H1_4861A' in linesLogDF.index else None
 
-        if Hbeta_sigma >= 0:
-            sigma_line = O3_5007_sigma / 5007.0 * c_SI
-        elif O3_5007_sigma >= 0:
+        if Hbeta_sigma is not None:
             sigma_line = Hbeta_sigma / 4861.0 * c_SI
+        elif O3_5007_sigma is not None:
+            sigma_line = O3_5007_sigma / 5007.0 * c_SI
         else:
-            sigma_line = 100
+            sigma_line = 50
 
         return sigma_line
 
@@ -291,7 +291,7 @@ class SSPsynthesizer(SspLinearModel):
 
         # -----------------------Generating Grid file---------------------------------
         if v_vector is None:
-            v_vector = ['FXK', '0.0', "10.0"]
+            v_vector = ['FXK', '0.0', str(round(sigma, 1))]
 
         GridLines = []
         GridLines.append("1")  # "[Number of fits to run]"])
@@ -427,6 +427,8 @@ class SSPsynthesizer(SspLinearModel):
         Bases = int(StarlightOutput[BasesLine].split()[0])
 
         # Location of my normalization flux in starlight output
+        #j,  x_j( %),  Mini_j( %),  Mcor_j( %),  age_j(yr), Z_j, (L / M)_j, YAV?, Mstars, component_j, a / Fe...
+        #0   1         2            3             4          5     6         7     8       9            10
         Sl_DataHeader = lineFinder(StarlightOutput, "# j     x_j(%)      Mini_j(%)     Mcor_j(%)     age_j(yr)")
         Ind_i = Sl_DataHeader + 1
         Ind_f = Sl_DataHeader + Bases
@@ -436,6 +438,7 @@ class SSPsynthesizer(SspLinearModel):
         Mini_j, Mcor_j = [], []
         age_j, Z_j = [], []
         LbyM, Mstars = [], []
+        component_name = []
 
         for j in range(Ind_i, Ind_f + 1):
             myDataLine = StarlightOutput[j].split()
@@ -447,13 +450,25 @@ class SSPsynthesizer(SspLinearModel):
             Z_j.append(float(myDataLine[5]))
             LbyM.append(float(myDataLine[6]))
             Mstars.append(float(myDataLine[8]))
+            component_name.append(myDataLine[9])
+
+        columns = ['j', 'x_j', 'Mini_j', 'Mcor_j', 'age_j', 'Z_j', 'L_to_M', 'Mstars', 'component_j', 'a_to_Fe']
+        BasesDF = pd.DataFrame(index=index, columns=columns)
+        BasesDF['x_j'] = x_j
+        BasesDF['Mini_j'] = Mini_j
+        BasesDF['Mcor_j'] = Mcor_j
+        BasesDF['age_j'] = age_j
+        BasesDF['Z_j'] = Z_j
+        BasesDF['L_to_M'] = LbyM
+        BasesDF['Mstars'] = Mstars
+        BasesDF['component_j'] = component_name
 
         Parameters = dict(Chi2=Chi2, Adev=Adev, SumXdev=SumXdev, Nl_eff=Nl_eff, v0_min=v0_min, vd_min=vd_min, Av_min=Av_min,
                           SignalToNoise_lowWave=SignalToNoise_lowWave, SignalToNoise_upWave=SignalToNoise_upWave,
                           SignalToNoise_magnitudeWave=SignalToNoise_magnitudeWave, l_norm=l_norm, llow_norm=llow_norm,
                           lupp_norm=lupp_norm, MaskPixels=MaskPixels, ClippedPixels=ClippedPixels, FlagPixels=FlagPixels,
                           index=index, x_j=x_j, Mini_j=Mini_j, Mcor_j=Mcor_j, age_j=age_j, Z_j=Z_j, LbyM=LbyM, Mstars=Mstars,
-                          Mini_tot=Mini_tot, Mcor_tot=Mcor_tot)
+                          Mini_tot=Mini_tot, Mcor_tot=Mcor_tot, DF=BasesDF)
 
         return Input_Wavelength, Input_Flux, Output_Flux, Parameters
 
@@ -473,27 +488,51 @@ class SSPsynthesizer(SspLinearModel):
 
         return
 
-    def stellar_fit_comparison_plot(self, objName, inWave, inFlux, outFlux, outputFileAddress=None):
+    def stellar_fit_comparison_plot(self, objName, wave, flux, nebCompFile, stellarFluxFile, outputFileAddress=None):
 
-        labelsDict = {'xlabel': r'Wavelength $(\AA)$',
-                      'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})\cdot10^{20}$',
-                      'title': f'Galaxy {objName} stellar continuum fitting'}
-
-        idcs_plot = inFlux > 0.0
-
-        fig, ax = plt.subplots(figsize=(12, 8))
-        ax.plot(inWave[idcs_plot], inFlux[idcs_plot], label='Input starlight flux')
-        ax.plot(inWave[idcs_plot], outFlux[idcs_plot], label='Output starlight fitting')
-        ax.update(labelsDict)
-        ax.legend()
-        ax.set_yscale('log')
-
-        if outputFileAddress is None:
-            plt.show()
-        else:
-            plt.savefig(outputFileAddress, bbox_inches='tight')
+        # labelsDict = {'xlabel': r'Wavelength $(\AA)$',
+        #               'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})\cdot10^{20}$',
+        #               'title': f'Galaxy {objName} stellar continuum fitting'}
+        #
+        # idcs_plot = inFlux > 0.0
+        #
+        # fig, ax = plt.subplots(figsize=(12, 8))
+        # ax.plot(inWave[idcs_plot], inFlux[idcs_plot], label='Input starlight flux')
+        # ax.plot(inWave[idcs_plot], outFlux[idcs_plot], label='Output starlight fitting')
+        # ax.update(labelsDict)
+        # ax.legend()
+        # ax.set_yscale('log')
+        #
+        # if outputFileAddress is None:
+        #     plt.show()
+        # else:
+        #     plt.savefig(outputFileAddress, bbox_inches='tight')
 
         # Clear the image
+
+        labelsDict = {'xlabel': r'Wavelength $(\AA)$',
+                      'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
+                      'title': f'Galaxy {objName} spectrum components'}
+
+        # # compare adding componennts
+        wave_neb, flux_neb = np.loadtxt(nebCompFile, unpack=True)
+        wave_star, flux_star = np.loadtxt(stellarFluxFile, unpack=True)
+
+        # Plot spectra components
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.plot(wave, flux, label='Object flux')
+        ax.plot(wave_neb, flux_neb, label='Nebular flux')
+        ax.plot(wave_star, flux_star, label='Stellar flux')
+        ax.plot(wave_star, flux_star + flux_neb, label='Combined continuum', linestyle=':')
+        ax.legend()
+        ax.set_yscale('log')
+        plt.tight_layout()
+
+        # if outputFileAddress is None:
+        #     plt.show()
+        # else:
+        #     plt.savefig(outputFileAddress, bbox_inches='tight')
+
         plt.close(fig)
 
         return

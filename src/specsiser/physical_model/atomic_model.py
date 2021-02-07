@@ -180,10 +180,9 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
         self.emisGridDict = {}
 
-        for i in range(len(labels_list)):
+        for i, line_label in enumerate(labels_list):
 
             # Line emissivity references
-            line_label = labels_list[i]
             if (grids_folder is not None) and load_grids:
                 emis_grid_i = np.load(grids_folder, line_label)
 
@@ -191,7 +190,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
             else:
 
                 # Single line:
-                if ('_b' not in line_label) and (line_label not in combined_dict):
+                if (('_m' not in line_label) or ('_b' not in line_label)) and (line_label not in combined_dict):
                     # TODO I should change wave by label
                     emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=pynebCode_list[i])
 
@@ -208,11 +207,6 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
             # Save grid dict
             self.emisGridDict[line_label] = np.log10(emis_grid_i / Hbeta_emis_grid)
-
-            # emis_grid_i_norm = np.log10(emis_grid_i / Hbeta_emis_grid)
-            # emis_grid_i_interp = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
-            #                                                        emis_grid_i_norm[:, :, None], nout=1)
-            # self.emisGridDict[line_label] = emis_grid_i_interp.evaluate
 
         return
 

@@ -186,7 +186,9 @@ def numberStringFormat(value, cifras = 4):
     if value > 0.001:
         newFormat = str(round(value, cifras))
     else:
-        newFormat = r'${:.3e}$'.format(value)
+        newFormat = str(value)
+    # else:
+    #     newFormat = r'${:.3e}$'.format(value)
 
     return newFormat
 
@@ -509,7 +511,7 @@ class PdfPrinter():
                         self.table.add_hline()
                         # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
                         output_row = list(map(partial(format_for_table), column_headers))
-                        self.table.add_row(output_row)
+                        self.table.add_row(output_row, escape=False, strict=False)
                         if addfinalLine:
                             self.table.add_hline()
 

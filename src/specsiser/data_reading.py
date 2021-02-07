@@ -133,7 +133,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
 
         # List of strings
         elif '_list' in key_label:
-            output_variable = np.array(entry_value.split(','))
+            output_variable = entry_value.split(',')
 
         # Objects arrays
         else:
@@ -149,18 +149,20 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
         output_variable = strtobool(entry_value) == 1
 
     # Standard strings
-    elif ('_folder' in key_label) or ('_file' in key_label) or ('_list' in key_label):
+    elif ('_folder' in key_label) or ('_file' in key_label):
         output_variable = entry_value
-
-    # elif (key_label not in STRINGCONFKEYS) and ('_folder' not in key_label) and ('_file' not in key_label) and \
-    #         ('_list' not in key_label) and ('_b_components' not in key_label) and section_label not in ['blended_groups', 'merged_groups']:
-    #
-    #     output_variable = float(entry_value)
 
     # Check if numeric possible else string
     else:
-        output_variable = check_numeric_Value(entry_value)
 
+        if '_list' in key_label:
+            output_variable = [entry_value]
+
+        elif '_array' in key_label:
+            output_variable = np.array([entry_value], ndmin=1)
+
+        else:
+            output_variable = check_numeric_Value(entry_value)
 
     return output_variable
 
@@ -579,31 +581,30 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
         idx_includeLines = ~(outputDF.index.isin(include_lines))
         outputDF.drop(index=outputDF.loc[idx_includeLines].index.values, inplace=True)
 
-    if linesDb is None:
-        cfg = importConfigFile(CONFIGPATH)
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-
-        # Declare default data folder
-        literatureDataFolder = os.path.join(dir_path, cfg['data_location']['external_data_folder'])
-
-        # Load library databases
-        linesDatabasePath = os.path.join(literatureDataFolder, cfg['data_location']['lines_data_file'])
-        linesDb = pd.read_excel(linesDatabasePath, sheet_name=0, header=0, index_col=0)
+    # if linesDb is None:
+    #     cfg = importConfigFile(CONFIGPATH)
+    #     dir_path = os.path.dirname(os.path.realpath(__file__))
+    #
+    #     # Declare default data folder
+    #     literatureDataFolder = os.path.join(dir_path, cfg['data_location']['external_data_folder'])
+    #
+    #     # Load library databases
+    #     linesDatabasePath = os.path.join(literatureDataFolder, cfg['data_location']['lines_data_file'])
+    #     linesDb = pd.read_excel(linesDatabasePath, sheet_name=0, header=0, index_col=0)
 
     # If wavelengths are provided for the observation we use them, else we use the theoretical values
     if 'obsWave' not in outputDF.columns:
-        idx_obs_labels = linesDb.index.isin(outputDF.index)
-        outputDF['obsWave'] = linesDb.loc[idx_obs_labels].wavelength
-
-    # Sort the dataframe by wavelength value in case it isn't
+        outputDF['obsWave'] = outputDF.wavelength
     outputDF.sort_values(by=['obsWave'], ascending=True, inplace=True)
 
+    # Sort the dataframe by wavelength value in case it isn't
+
     # Get the references for the lines treatment
-    idx_obj_lines = linesDb.index.isin(outputDF.index)
-    outputDF['lineType'] = linesDb.loc[idx_obj_lines].lineType.astype(str)
-    outputDF['pynebCode'] = linesDb.loc[idx_obj_lines].pynebCode
-    outputDF['latexLabel'] = linesDb.loc[idx_obj_lines].latexLabel
-    outputDF['blended'] = linesDb.loc[idx_obj_lines].blended
+    # idx_obj_lines = linesDb.index.isin(outputDF.index)
+    # outputDF['lineType'] = linesDb.loc[idx_obj_lines].lineType.astype(str)
+    # outputDF['pynebCode'] = linesDb.loc[idx_obj_lines].pynebCode
+    # outputDF['latexLabel'] = linesDb.loc[idx_obj_lines].latexLabel
+    # outputDF['blended'] = linesDb.loc[idx_obj_lines].blended
 
     # Trim with exclude lines
     if exclude_lines is not None:

@@ -100,6 +100,7 @@ class SpectraSynthesizer(MCOutputDisplay):
                       f'flux = {self.emissionFluxes[i]:.4f} +/- {self.emissionErr[i]:.4f} '
                       f'|| err/flux = {100 * self.emissionErr[i]/self.emissionFluxes[i]:.2f} %')
 
+            # TODO Only display those which we are actually using
             # Display prior configuration
             print(f'\n- Priors configuration ({len(model_parameters)} parameters):')
             for param in model_parameters:

@@ -1378,9 +1378,11 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def table_fluxes(self, lines_df, tex_address, txt_address, pyneb_rc, scaleTable=1000):
+    def table_fluxes(self, lines_df, table_address, pyneb_rc, scaleTable=1000):
 
         # TODO this could be included in sr.print
+        tex_address = f'{table_address}'
+        txt_address = f'{table_address}.txt'
 
         # Measure line fluxes
         pdf = PdfPrinter()
@@ -1395,7 +1397,6 @@ class LineMesurer(EmissionFitting):
             flux_Hbeta = lines_df.loc['H1_4861A', 'intg_flux']
         else:
             flux_Hbeta = scaleTable
-
 
         obsLines = lines_df.index.values
         for lineLabel in obsLines:

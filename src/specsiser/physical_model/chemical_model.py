@@ -249,19 +249,19 @@ class Standard_DirectMetchod:
                        R_N2=('N2_6548A', 'N2_6584A', 'N2_5755A'),
                        R_S3=('S3_9531A', 'S3_9069A', 'S3_6312'))
 
-    ABUND_LINES = dict(Ar3=('Ar3_7136A'),
-                       Ar4=('Ar4_4740A'),
-                       Ne3=('Ne3_3968A'),
-                       Fe3=('Fe3_4658A'),
-                       He1r=('He1_4471A', 'He1_5876A', 'He1_6678A'),
-                       He2r=('He2_4686A'),
-                       Cl3=('Cl3_5538A', 'Cl3_5518A'),
-                       S2=('S2_6716A', 'S2_6731A'),
-                       S3=('S3_9069A', 'S3_9531A'),
-                       N2=('N2_6584A', 'N2_6548A'),
-                       O2_3700=('O2_3726A_m'),
-                       O2_7300=('O2_7319A_m'),
-                       O3=('O3_4959A', 'O3_5007A'))
+    ABUND_LINES = dict(Ar3=['Ar3_7136A'],
+                       Ar4=['Ar4_4740A'],
+                       Ne3=['Ne3_3869A'],
+                       Fe3=['Fe3_4658A'],
+                       He1r=['He1_4471A', 'He1_5876A', 'He1_6678A'],
+                       He2r=['He2_4686A'],
+                       Cl3=['Cl3_5538A', 'Cl3_5518A'],
+                       S2=['S2_6716A', 'S2_6731A'],
+                       S3=['S3_9069A', 'S3_9531A'],
+                       N2=['N2_6584A', 'N2_6548A'],
+                       O2_3700=['O2_3726A_m'],
+                       O2_7300=['O2_7319A_m'],
+                       O3=['O3_4959A', 'O3_5007A'])
 
     def __init__(self, n_steps=1000):
 
@@ -494,60 +494,57 @@ class Standard_DirectMetchod:
                 Te, ne = self.electron_params[temp_label], self.electron_params[den_label]
 
                 # Loop throught the observed lines to treat the ionic abundances
-                for i in np.arange(ion_array.size):
-                    if ion_array[i] == ion:
-                        lineLabel = lineLabels[i]
-                        int_ratio = int_dict[lineLabel]
+                idcs_linesIon = ion_array == ion
+                for i, lineLabel in enumerate(lineLabels[idcs_linesIon]):
 
-                        # Compute line reference accounting for blended lines
-                        if lineLabel in line_fit_dict:
-                            line_comps = np.array(line_fit_dict[lineLabel], ndmin=1)
-                        else:
-                            line_comps = lineLabel
-                        ion_i, wavelength_i, latexLabel_i = label_decomposition(line_comps)
+                    int_ratio = int_dict[lineLabel]
 
-                        # Ignore merge lines with different ions
-                        if np.unique(ion_i).size < 2:
+                    # Compute line reference accounting for blended lines
+                    if lineLabel in line_fit_dict:
+                        line_comps = np.array(line_fit_dict[lineLabel], ndmin=1)
+                    else:
+                        line_comps = lineLabel
+                    ion_i, wavelength_i, latexLabel_i = label_decomposition(line_comps)
 
-                            # For the Helium add the recombination label i.e. He1r
-                            ion = ion if ion not in ('He1', 'He2') else ion + 'r'
+                    # Ignore merge lines with different ions
+                    if np.unique(ion_i).size < 2:
 
-                            line_ref = "+".join(map("L({:.0f})".format, wavelength_i))
+                        line_ref = "+".join(map("L({:.0f})".format, wavelength_i))
 
-                            # Compute the abundance
-                            try:
-                                ionic_abund = self.ionDict[ion].getIonAbundance(int_ratio,
+                        # For the Helium add the recombination label i.e. He1r
+                        ion_emis = ion if ion not in ('He1', 'He2') else ion + 'r'
+
+                        # Compute the abundance
+                        try:
+                            ionic_abund = self.ionDict[ion_emis].getIonAbundance(int_ratio,
                                                                                 Te, ne,
                                                                                 to_eval=line_ref,
                                                                                 Hbeta=1)
-                                if ion not in ('He1r', 'He2r'):
-                                    ionic_abund = 12 + np.log10(ionic_abund)
+                            if ion_emis not in ('He1r', 'He2r'):
+                                ionic_abund = 12 + np.log10(ionic_abund)
 
-                                self.ionic_abund[lineLabel] = ionic_abund
-                            except:
-                                self.ionic_abund[lineLabel] = 'Abundance failure'
-                                print(f'-- {lineLabel} abundance with ref {line_ref} could not be calculated')
+                            self.ionic_abund[lineLabel] = ionic_abund
+                        except:
+                            self.ionic_abund[lineLabel] = 'Abundance failure'
+                            print(f'-- {lineLabel} abundance with ref {line_ref} could not be calculated')
 
-        # -------------------------- Region diagnostics
-        abund_dict = {}
-        obsLineSet = set(lineLabels)
+        # -------------------------- Ionic abundances
+        obsLineSet = set(self.ionic_abund.keys())
         for ion in self.obsIons:
             if ion != 'H1':  # Exclude hydrogen
-                # Establish temperature and density for the corresponding ion
-                ion_region = 'low' if ion not in chem_model_dict['high_ionzation_ions_list'] else 'high'
-                temp_label = f'Te_{ion_region}' if f'Te_{ion}' not in chem_model_dict else f'Te_{ion}'
-                den_label = 'ne' if f'ne_{ion}' not in chem_model_dict else f'ne_{ion}'
-                Te, ne = self.electron_params[temp_label], self.electron_params[den_label]
 
-                # Establish the lines for the abundance
-                ion = ion if ion not in ('He1', 'He2') else ion + 'r'
-                abundLines_ref = f'{ion}_lines'
-                if abundLines_ref in chem_model_dict or ion in self.ABUND_LINES:
+                ion_abund = ion if ion not in ('He1', 'He2') else ion + 'r'
 
+                abundLines_ref = f'{ion_abund}_line_list'
+                if abundLines_ref in chem_model_dict or ion_abund in self.ABUND_LINES:
+
+                    # User lines have preference over default lines
                     if abundLines_ref in chem_model_dict:
                         abund_lines = chem_model_dict[abundLines_ref]
                     else:
-                        abund_lines = self.ABUND_LINES[ion]
+                        abund_lines = set(self.ABUND_LINES[ion_abund])
+
+                    # Check lines have abundances
                     abund_lines = list(obsLineSet & set(abund_lines))
 
                     if len(abund_lines) > 0:
@@ -563,21 +560,20 @@ class Standard_DirectMetchod:
 
                         # Compute the abundance
                         try:
-                            ionic_abund = self.ionDict[ion].getIonAbundance(int_ratio,
+                            ionic_abund = self.ionDict[ion_abund].getIonAbundance(int_ratio,
                                                                             Te, ne,
                                                                             to_eval=line_ref,
                                                                             Hbeta=1)
-                            if ion not in ('He1r', 'He2r'):
+                            if ion_abund not in ('He1r', 'He2r'):
                                 ionic_abund = 12 + np.log10(ionic_abund)
 
-                            self.ionic_abund[ion] = ionic_abund
+                            self.ionic_abund[ion_abund] = ionic_abund
                         except:
-                            self.ionic_abund[ion] = 'Abundance failure'
-                            print(f'-- {lineLabel} ionic abundance with {line_ref} could not be calculated')
+                            self.ionic_abund[ion_abund] = f'Ionic abundance failure {abund_lines}'
 
         return
 
-    def save_measurments(self, file_address, prefix='', nan_max=0.05):
+    def save_measurements(self, file_address, prefix='', nan_max=0.05):
 
         ratios_output = {}
         for ratio_label, ratio_value in self.obs_ratios.items():
@@ -617,7 +613,7 @@ class Standard_DirectMetchod:
                 e_params_output[output_key + '_nan_entries'] = nan_sum
 
         # Store the results
-        section_name = f'{prefix}_Electron_parameters'
+        section_name = f'{prefix}_electron_parameters'
         parseConfDict(file_address, e_params_output, section_name, clear_section=True)
 
         # Treat the ionic abundance measurements
@@ -640,7 +636,7 @@ class Standard_DirectMetchod:
                 ionic_abund_output[output_key] = mc_value
 
         # Store the results
-        section_name = f'{prefix}_Ionic_Abundances'
+        section_name = f'{prefix}_ionic_Abundances'
         parseConfDict(file_address, ionic_abund_output, section_name, clear_section=True)
 
         return

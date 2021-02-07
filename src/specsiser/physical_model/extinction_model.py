@@ -167,7 +167,6 @@ class ExtinctionModel:
         if red_curve is None:
             red_curve = self.red_curve
 
-
         self.rcGas = pn.RedCorr(R_V=R_v, law=red_curve)
 
         HbetaXx = self.rcGas.X(normWave)
