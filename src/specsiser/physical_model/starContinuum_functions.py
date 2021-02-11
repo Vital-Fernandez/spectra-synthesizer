@@ -494,26 +494,6 @@ class SSPsynthesizer(SspLinearModel):
 
     def stellar_fit_comparison_plot(self, objName, wave, flux, nebCompFile, stellarFluxFile, outputFileAddress=None):
 
-        # labelsDict = {'xlabel': r'Wavelength $(\AA)$',
-        #               'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})\cdot10^{20}$',
-        #               'title': f'Galaxy {objName} stellar continuum fitting'}
-        #
-        # idcs_plot = inFlux > 0.0
-        #
-        # fig, ax = plt.subplots(figsize=(12, 8))
-        # ax.plot(inWave[idcs_plot], inFlux[idcs_plot], label='Input starlight flux')
-        # ax.plot(inWave[idcs_plot], outFlux[idcs_plot], label='Output starlight fitting')
-        # ax.update(labelsDict)
-        # ax.legend()
-        # ax.set_yscale('log')
-        #
-        # if outputFileAddress is None:
-        #     plt.show()
-        # else:
-        #     plt.savefig(outputFileAddress, bbox_inches='tight')
-
-        # Clear the image
-
         labelsDict = {'xlabel': r'Wavelength $(\AA)$',
                       'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
                       'title': f'Galaxy {objName} spectrum components'}
@@ -532,10 +512,10 @@ class SSPsynthesizer(SspLinearModel):
         ax.set_yscale('log')
         plt.tight_layout()
 
-        # if outputFileAddress is None:
-        #     plt.show()
-        # else:
-        #     plt.savefig(outputFileAddress, bbox_inches='tight')
+        if outputFileAddress is None:
+            plt.show()
+        else:
+            plt.savefig(outputFileAddress, bbox_inches='tight')
 
         plt.close(fig)
 
