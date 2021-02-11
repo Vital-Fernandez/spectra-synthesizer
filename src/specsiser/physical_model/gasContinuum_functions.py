@@ -95,7 +95,7 @@ class NebularContinua:
         else:
             return neb_flux
 
-    def flux_spectrum(self, wave, Te=10000.0, Halpha_Flux=1e-14, He1_abund=0.1, He2_abund=0.001):
+    def flux_spectrum(self, wave, Te, Halpha_Flux, He1_abund=0.1, He2_abund=0.001):
 
         neb_gamma = self.gamma_spectrum(wave, Te, He1_abund, He2_abund)
 
@@ -194,10 +194,10 @@ class NebularContinua:
         t4 = Te / 10000.0
 
         # Pequignot et al. 1991
-        alfa_eff_alpha = 2.708e-13 * t4 ** -0.648 / (1 + 1.315 * t4 ** 0.523)
-        # alfa_eff_beta = 0.668e-13 * t4**-0.507 / (1 + 1.221*t4**0.653)
+        # alfa_eff_alpha = 2.708e-13 * t4 ** -0.648 / (1 + 1.315 * t4 ** 0.523)
+        alfa_eff_beta = 0.668e-13 * t4**-0.507 / (1 + 1.221*t4**0.653)
 
-        fNeb_cont_lambda = gNeb_cont_nu * lambda_EmLine * flux_Emline / (alfa_eff_alpha * h_cgs * wave * wave)
+        fNeb_cont_lambda = gNeb_cont_nu * lambda_EmLine * flux_Emline / (alfa_eff_beta * h_cgs * wave * wave)
 
         return fNeb_cont_lambda
 
