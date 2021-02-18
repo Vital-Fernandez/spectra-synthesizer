@@ -653,27 +653,32 @@ class SSPsynthesizer(SspLinearModel):
 
         return
 
-    def mask_plot(self, fit_output, objName, objWave, objFlux, Input_Wavelength, stellar_flux, Input_Flux, maskFile, outputAddress=None):
+    def mask_plot(self, fit_output, objName, objWave, objFlux, Input_Wavelength, stellar_flux, Input_Flux, maskFile=None, outputAddress=None):
 
         labelsDict = {'xlabel': r'Wavelength $(\AA)$',
                       'ylabel': r'Flux $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
                       'title': f'Galaxy {objName} stellar continuum fit'}
 
-        # Mask plots
-        iniPoints, endPoints, tag = np.loadtxt(maskFile, skiprows=1, usecols=(0, 1, 2), unpack=True)
-        label = np.loadtxt(maskFile, skiprows=1, usecols=(3), unpack=True, dtype=str)
 
         # Plot spectra components
         fig, ax = plt.subplots(figsize=(12, 8))
         ax.plot(objWave, objFlux, label='Object flux no nebular component')
-        ax.plot(Input_Wavelength, Input_Flux, label='Starlight input spectrum', color='tab:green', linestyle=':')
-        ax.plot(Input_Wavelength, stellar_flux, label='Stellar fit', color='tab:green', linestyle=':')
+        ax.plot(Input_Wavelength, Input_Flux, label='Starlight input spectrum', color='black', linestyle=':')
+        ax.plot(Input_Wavelength, stellar_flux, label='Stellar fit', color='tab:orange', linestyle='--')
 
-        for idx in np.arange(iniPoints.size):
-            ax.axvspan(iniPoints[idx], endPoints[idx], alpha=0.25, color='tab:orange')
+        # Mask plots
+        if maskFile is not None:
+            iniPoints, endPoints, tag = np.loadtxt(maskFile, skiprows=1, usecols=(0, 1, 2), unpack=True)
+            label = np.loadtxt(maskFile, skiprows=1, usecols=(3), unpack=True, dtype=str)
+
+            for idx in np.arange(iniPoints.size):
+                ax.axvspan(iniPoints[idx], endPoints[idx], alpha=0.25, color='tab:orange')
+        else:
+            ax.scatter(fit_output['MaskPixels'][0], fit_output['MaskPixels'][1], color='tab:orange',
+                       label='masked pixels')
 
         ax.scatter(fit_output['ClippedPixels'][0], fit_output['ClippedPixels'][1], color='tab:purple', label='Clipped pixels')
-        ax.scatter(fit_output['FlagPixels'][0], fit_output['FlagPixels'][1], color='tab:red', label='FlagPixels pixels')
+        ax.scatter(fit_output['FlagPixels'][0], fit_output['FlagPixels'][1], color='tab:red', label='FlagPixels pixels', alpha=0.5)
 
         ax.update(labelsDict)
         ax.legend()
