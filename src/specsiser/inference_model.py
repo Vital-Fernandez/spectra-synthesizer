@@ -59,14 +59,14 @@ class SpectraSynthesizer(MCOutputDisplay):
     def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, minErr=0.02):
 
         # Lines data
-        self.lineLabels = objLinesDF.index.values
-        self.lineIons = objLinesDF.ion.values
-        self.emissionFluxes = objLinesDF.obsFlux.values
-        self.emissionErr = objLinesDF.obsFluxErr.values
-        print(objLinesDF.obsWave.values)
-        self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.obsWave.values)
-        self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
+        idcs_lines = (objLinesDF.index != ion_model.normLine)
+        self.lineLabels = objLinesDF.loc[idcs_lines].index.values
+        self.lineIons = objLinesDF.loc[idcs_lines].ion.values
+        self.emissionFluxes = objLinesDF.loc[idcs_lines].obsFlux.values
+        self.emissionErr = objLinesDF.loc[idcs_lines].obsFluxErr.values
+        self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.loc[idcs_lines].obsWave.values)
 
+        self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
         self.obsIons = chemistry_model.obsAtoms
         self.highTemp_check = chemistry_model.indcsHighTemp
 
@@ -147,7 +147,7 @@ class SpectraSynthesizer(MCOutputDisplay):
         linesRangeArray = np.arange(self.lineLabels.size)
 
         # Assign variable values
-        self.paramDict['H1r'] = 0.0
+        self.paramDict['H1'] = 0.0
 
         with pymc3.Model() as self.inferenModel:
 
@@ -166,7 +166,7 @@ class SpectraSynthesizer(MCOutputDisplay):
 
             # Establish model composition
             for ion in self.obsIons:
-                if ion != 'H1r':
+                if ion != 'H1':
                     self.set_prior(ion, abund=True, name_param=ion)
 
             # Loop through the lines to compute the synthetic fluxes

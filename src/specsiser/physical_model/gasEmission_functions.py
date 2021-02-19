@@ -9,7 +9,7 @@ def ftau_func(tau, temp, den, a, b, c, d):
     return 1 + tau / 2.0 * (a + (b + c * den + d * den * den) * temp / 10000.0)
 
 
-def assignFluxEq2Label(labelsList, ionsList, recombLabels=['H1r', 'He1r', 'He2r']):
+def assignFluxEq2Label(labelsList, ionsList, recombLabels=['H1', 'He1', 'He2']):
     eqLabelArray = np.copy(ionsList)
 
     for i in range(eqLabelArray.size):
@@ -23,7 +23,7 @@ def assignFluxEq2Label(labelsList, ionsList, recombLabels=['H1r', 'He1r', 'He2r'
     return eqLabelArray
 
 
-def gridInterpolatorFunction(interpolatorDict, x_range, y_range, interp_type = 'point'):
+def gridInterpolatorFunction(interpolatorDict, x_range, y_range, z_range=None, interp_type='point'):
 
     emisInterpGrid = {}
 
@@ -32,11 +32,18 @@ def gridInterpolatorFunction(interpolatorDict, x_range, y_range, interp_type = '
             emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i[:, :, None], nout=1)
             emisInterpGrid[line] = emisInterp_i.evaluate
 
-    if interp_type == 'axis':
+    elif interp_type == 'axis':
         for line, emisGrid_i in interpolatorDict.items():
             emisGrid_i_reshape = emisGrid_i.reshape((x_range.size, y_range.size, -1))
             emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i_reshape)
             emisInterpGrid[line] = emisInterp_i.evaluate
+
+    elif interp_type == 'cube':
+        for line, grid_ndarray in interpolatorDict.items():
+            xo_interp = xo.interp.RegularGridInterpolator([x_range,
+                                                           y_range,
+                                                           z_range], grid_ndarray)
+            emisInterpGrid[line] = xo_interp.evaluate
 
     return emisInterpGrid
 
@@ -67,15 +74,15 @@ class EmissionFluxModel:
 
         # TODO this could read the attribute fun directly
         # Dictionary storing emission flux equation database (log scale)
-        emFluxDb_log = {'H1r': self.ion_H1r_flux_log,
-                        'He1r': self.ion_He1r_flux_log,
-                        'He2r': self.ion_He2r_flux_log,
+        emFluxDb_log = {'H1': self.ion_H1r_flux_log,
+                        'He1': self.ion_He1r_flux_log,
+                        'He2': self.ion_He2r_flux_log,
                         'metals': self.metals_flux_log,
                         'O2_7319A_b': self.ion_O2_7319A_b_flux_log}
 
         for i, lineLabel in enumerate(label_list):
 
-            if ion_list[i] in ('H1r', 'He1r', 'He2r'):
+            if ion_list[i] in ('H1', 'He1', 'He2'):
                 self.emFluxEqDict[lineLabel] = emFluxDb_log[ion_list[i]]
                 self.emFluxParamDict[lineLabel] = ['emis_ratio', 'cHbeta', 'flambda', 'abund', 'ftau']
 
@@ -118,7 +125,7 @@ class EmissionFluxModel:
         return emis_ratio - flambda * cHbeta
 
     def ion_He1r_flux_log(self, emis_ratio, cHbeta, flambda, abund, ftau):
-        return abund + ftau + emis_ratio - cHbeta * flambda
+        return abund + emis_ratio - cHbeta * flambda
 
     def ion_He2r_flux_log(self, emis_ratio, cHbeta, flambda, abund, ftau):
         return abund + emis_ratio - cHbeta * flambda

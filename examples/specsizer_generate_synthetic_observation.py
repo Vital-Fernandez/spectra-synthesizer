@@ -1,6 +1,12 @@
 import os
 import numpy as np
+import pandas as pd
 import src.specsiser as sr
+
+
+import theano.tensor as tt
+import pymc3
+from src.specsiser.inference_model import displaySimulationData
 
 # Use the default user folder to store the results
 # user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
@@ -15,42 +21,69 @@ for n_obj in range(n_objs):
     # We use the default simulation configuration as a base
     objParams = sr._default_cfg.copy()
 
+    # # Set the paramter values
+    # objParams['true_values'] = {'n_e': 100.0 + 50.0 * n_obj,
+    #                             'T_low': 10000.0 * (1.0 + 0.05 * n_obj),
+    #                             'T_high': sr.TOIII_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
+    #                             'tau': 0.60 + 0.15 * n_obj,
+    #                             'cHbeta': 0.08 + 0.02 * n_obj,
+    #                             'H1': 0.0,
+    #                             'He1': np.log10(0.070 + 0.005 * n_obj),
+    #                             'He2': np.log10(0.00088 + 0.0002 * n_obj),
+    #                             'O2': 7.805 + 0.15 * n_obj,
+    #                             'O3': 8.055 + 0.15 * n_obj,
+    #                             'N2': 5.845 + 0.15 * n_obj,
+    #                             'S2': 5.485 + 0.15 * n_obj,
+    #                             'S3': 6.365 + 0.15 * n_obj,
+    #                             'Ne3': 7.065 + 0.15 * n_obj,
+    #                             'Fe3': 5.055 + 0.15 * n_obj,
+    #                             'Ar3': 5.725 + 0.15 * n_obj,
+    #                             'Ar4': 5.065 + 0.15 * n_obj}
+
     # Set the paramter values
     objParams['true_values'] = {'n_e': 100.0 + 50.0 * n_obj,
                                 'T_low': 10000.0 * (1.0 + 0.05 * n_obj),
                                 'T_high': sr.TOIII_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
                                 'tau': 0.60 + 0.15 * n_obj,
                                 'cHbeta': 0.08 + 0.02 * n_obj,
-                                'H1r': 0.0,
-                                'He1r': np.log10(0.070 + 0.005 * n_obj),
-                                'He2r': np.log10(0.00088 + 0.0002 * n_obj),
-                                'O2': 7.80 + 0.15 * n_obj,
-                                'O3': 8.05 + 0.15 * n_obj,
-                                'N2': 5.84 + 0.15 * n_obj,
-                                'S2': 5.48 + 0.15 * n_obj,
-                                'S3': 6.36 + 0.15 * n_obj,
-                                'Ar3': 5.72 + 0.15 * n_obj,
-                                'Ar4': 5.06 + 0.15 * n_obj}
+                                'H1': 0.0,
+                                'He1': np.log10(0.070 + 0.005 * n_obj),
+                                'He2': np.log10(0.00088 + 0.0002 * n_obj),
+                                'O2': 7.805 + 0.15 * n_obj,
+                                'O3': 8.055 + 0.15 * n_obj,
+                                'N2': 5.845 + 0.15 * n_obj,
+                                'S2': 5.485 + 0.15 * n_obj,
+                                'S3': 6.94 + 0.15 * n_obj,
+                                'Ne3': 7.065 + 0.15 * n_obj,
+                                'Fe3': 5.055 + 0.15 * n_obj,
+                                'Ar3': 5.725 + 0.15 * n_obj,
+                                'Ar4': 5.065 + 0.15 * n_obj}
 
     # Declare lines to simulate
-    objParams['input_lines'] = ['H1_4341A', 'H1_4861A', 'H1_6563A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He1_7065A',
-                   'He2_4686A', 'O2_7319A_b', 'O2_7319A', 'O2_7330A', 'O2_7319A_b', 'O3_4363A', 'O3_4959A', 'O3_5007A',
-                   'N2_6548A', 'N2_6584A', 'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A',
+    merged_lines = {'O2_3726A_m': 'O2_3726A-O2_3729A', 'O2_7319A_m': 'O2_7319A-O2_7330A'}
+    objParams['input_lines'] = ['H1_4341A', 'H1_4861A', 'H1_6563A', 'He1_4026A', 'He1_4471A', 'He1_5876A', 'He1_6678A', 'He1_7065A',
+                   'He2_4686A', 'O2_3726A_m', 'O2_7319A_m', 'O3_4363A', 'O3_4959A', 'O3_5007A',
+                   'N2_6548A', 'Ne3_3968A', 'Fe3_4658A', 'N2_6584A', 'S2_6716A', 'S2_6731A', 'S3_6312A', 'S3_9069A', 'S3_9531A', 'Ar3_7136A',
                    'Ar4_4740A']
 
     # We use the default lines database to generate the synthetic emission lines log for this simulation
     linesLogPath = os.path.join(sr._literatureDataFolder, sr._default_cfg['data_location']['lines_data_file'])
 
-    # Prepare dataframe with the observed lines labeled
-    objLinesDF = sr.import_emission_line_data(linesLogPath, include_lines=objParams['input_lines'])
+    ion_array, wavelength_array, latexLabel_array = sr.label_decomposition(objParams['input_lines'],
+                                                                        combined_dict=merged_lines)
 
-    objLinesDF.loc['O2_7319A_b'] = None
-    objLinesDF.loc['O2_7319A_b', 'wavelength'] = 7325.0
-    objLinesDF.loc['O2_7319A_b', 'obsWave'] = 7325.0
-    objLinesDF.loc['O2_7319A_b', 'ion'] = 'O2'
-    objLinesDF.loc['O2_7319A_b', 'blended'] = 'O2_7319A-O2_7330A'
-    objLinesDF.loc['O2_7319A_b', 'latexlabel'] = '$7319\AA\,[OII]+7330\AA\,[OII]$'
-    objLinesDF.sort_values(by=['obsWave'], ascending=True, inplace=True)
+    # Define a pandas dataframe to contain the lines data
+    linesLogHeaders = ['wavelength', 'obsFlux', 'obsFluxErr', 'ion', 'blended', 'latexLabel']
+    objLinesDF = pd.DataFrame(index = objParams['input_lines'], columns=linesLogHeaders)
+    objLinesDF['ion'] = ion_array
+    objLinesDF['wavelength'] = wavelength_array
+    objLinesDF['latexLabel'] = latexLabel_array
+
+    objLinesDF['blended'] = 'None'
+    idcs_blended = objLinesDF.index.isin(merged_lines.keys())
+    objLinesDF.loc[idcs_blended, 'blended'] = list(merged_lines.values())
+
+    objLinesDF.sort_values(by=['wavelength'], ascending=True, inplace=True)
 
     # Declare extinction properties
     objRed = sr.ExtinctionModel(Rv=objParams['simulation_properties']['R_v'],
@@ -58,7 +91,7 @@ for n_obj in range(n_objs):
                                 data_folder=objParams['data_location']['external_data_folder'])
 
     # Compute the reddening curve for the input emission lines
-    lineFlambdas = objRed.gasExtincParams(wave=objLinesDF.obsWave.values)
+    lineFlambdas = objRed.gasExtincParams(wave=objLinesDF.wavelength.values)
 
     # Establish atomic data references
     objIons = sr.IonEmissivity(tempGrid=objParams['simulation_properties']['temp_grid'],
@@ -70,8 +103,7 @@ for n_obj in range(n_objs):
     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
 
     # Compute the emissivity surfaces for the observed emission lines
-    objIons.computeEmissivityGrids(objLinesDF, ionDict, linesDb=objLinesDF,
-                                   combined_dict={'O2_7319A_b': 'O2_7319A-O2_7330A'})
+    objIons.computeEmissivityGrids(objLinesDF, ionDict, combined_dict=merged_lines)
 
     # Declare the paradigm for the chemical composition measurement
     objChem = sr.DirectMethod()
@@ -88,7 +120,7 @@ for n_obj in range(n_objs):
     # Compute the emission line fluxess
     lineLogFluxes = np.empty(len(objLinesDF))
     params_dict = objParams['true_values']
-    He1_fluorescence_check = objChem.indcsIonLines['He1r']
+    He1_fluorescence_check = objChem.indcsIonLines['He1']
 
     for i in np.arange(len(objLinesDF)):
 
@@ -120,9 +152,95 @@ for n_obj in range(n_objs):
 
     # Convert to a natural scale
     lineFluxes = np.power(10, lineLogFluxes)
+    objLinesDF['obsFlux'] = lineFluxes
+    objLinesDF['obsFluxErr'] = lineFluxes * objParams['simulation_properties']['lines_minimum_error']
 
-    objLinesDF.insert(loc=1, column='obsFlux', value=lineFluxes)
-    objLinesDF.insert(loc=2, column='obsFluxErr', value=lineFluxes * objParams['simulation_properties']['lines_minimum_error'])
+    # # Compute the ionization parameter from the grids
+    # gridLineDict, gridAxDict = sr.load_ionization_grid(log_scale=True)
+    # photoIonization_grid = sr.gridInterpolatorFunction(gridLineDict, gridAxDict['logU'],
+    #                                                                  gridAxDict['Teff'],
+    #                                                                  gridAxDict['OH'],
+    #                                                                  interp_type='cube')
+    # 
+    # # Manual interpolation to get the true value
+    # lineGridLabels = []
+    # lineInten = []
+    # lineIntenErr = []
+    # lineLambdaGrid = []
+    # for i in np.arange(len(objLinesDF)):
+    # 
+    #     lineLabel = objLinesDF.iloc[i].name
+    #     lineFlambda = lineFlambdas[i]
+    #     lineFlux, lineFluxErr = objLinesDF.loc[lineLabel, 'obsFlux':'obsFluxErr']
+    # 
+    #     if lineLabel in photoIonization_grid:
+    #         lineGridLabels.append(lineLabel)
+    #         # lineInten.append(lineFlux / np.power(10, - params_dict['cHbeta'] * lineFlambda))
+    #         # lineIntenErr.append(lineFluxErr / np.power(10, - params_dict['cHbeta'] * lineFlambda))
+    #         lineLambdaGrid.append(lineFlambda)
+    #         lineInten.append(lineFlux)
+    #         lineIntenErr.append(lineFluxErr)
+    # 
+    # lineGridLabels, lineInten, lineIntenErr = np.array(lineGridLabels), np.array(lineInten), np.array(lineIntenErr)
+    # lineInten, lineIntenErr = np.log10(lineInten), np.log10(lineIntenErr)
+    # lineLambdaGrid = np.array(lineLambdaGrid)
+    # lineRange = np.arange(lineGridLabels.size)
+
+    # lineGridLabels2 = []
+    # lineInten2 = []
+    # lineIntenErr2 = []
+    # for i in np.arange(len(objLinesDF)):
+    #
+    #     lineLabel = objLinesDF.iloc[i].name
+    #     lineFlambda = lineFlambdas[i]
+    #     lineFlux, lineFluxErr = objLinesDF.loc[lineLabel, 'obsFlux':'obsFluxErr']
+    #     lineFlux, lineFluxErr = np.log10(lineFlux), np.log10(lineFluxErr)
+    #
+    #
+    #     if lineLabel in photoIonization_grid:
+    #         lineGridLabels2.append(lineLabel)
+    #         lineInten2.append(lineFlux - (-params_dict['cHbeta'] * lineFlambda))
+    #         lineIntenErr2.append(lineFluxErr - (- params_dict['cHbeta'] * lineFlambda))
+    #
+    # lineGridLabels2, lineInten2, lineIntenErr2 = np.array(lineGridLabels2), np.array(lineInten2), np.array(lineIntenErr2)
+    # lineRange2 = np.arange(lineGridLabels.size)
+
+    # O35007A_flambda = lineFlambdas[11]
+    # O35007A_flux = objLinesDF.loc['O3_5007A', 'obsFlux']
+    # O35007A_flux_log = np.log10(objLinesDF.loc['O3_5007A', 'obsFlux'])
+    # O35007A_int = O35007A_flux / np.power(10, - params_dict['cHbeta'] * O35007A_flambda)
+    # O35007A_int_log = O35007A_flux_log - (- params_dict['cHbeta'] * O35007A_flambda)
+    # print(O35007A_int == np.power(10, O35007A_int_log))
+
+    # O2_abund = np.power(10, params_dict['O2'] - 12)
+    # O3_abund = np.power(10, params_dict['O3'] - 12)
+    # OH = np.log10(O2_abund + O3_abund) + 12
+    # 
+    # with pymc3.Model() as model:
+    # 
+    #     # Priors
+    #     Teff = pymc3.Uniform('Teff', lower=30000.0, upper=90000.0)
+    #     logU = pymc3.Uniform('logU', lower=-4, upper=-1.5)
+    # 
+    #     # Interpolation coord
+    #     grid_coord = tt.stack([[logU], [Teff], [OH]], axis=-1)
+    # 
+    #     # Loop throught
+    #     for i in lineRange:
+    #         # Line intensity
+    #         lineInt = photoIonization_grid[lineGridLabels[i]](grid_coord)
+    # 
+    #         lineFlux = lineInt - params_dict['cHbeta'] * lineLambdaGrid[i]
+    # 
+    #         Y_emision = pymc3.Normal(lineGridLabels[i], mu=lineFlux, sd=lineIntenErr[i], observed=lineInten[i])
+    # 
+    #     displaySimulationData(model)
+    # 
+    #     trace = pymc3.sample(5000, tune=2000, chains=2, cores=1, model=model)
+    # 
+    # print(pymc3.summary(trace))
+    # for param in ('Teff', 'logU'):
+    #     objParams['true_values'][param] = trace['logU'].mean()
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
     print(f'- Saving synthetic observation at: {user_folder}')
@@ -135,8 +253,6 @@ for n_obj in range(n_objs):
     for param in objParams['priors_configuration']['logParams_list']:
         param_true_ref = param + '_true'
         objParams['true_values'][param] = np.power(10, objParams['true_values'][param])
-    # objLinesDF['intg_flux'] = lineFluxes
-    # objLinesDF['intg_err'] = lineFluxes * objParams['lines_minimum_error']
 
     # Finally we safe a configuration file to fit the spectra afterwards
     synthConfigPath = f'{user_folder}GridEmiss_region{n_obj+1}of{n_objs}_config.txt'

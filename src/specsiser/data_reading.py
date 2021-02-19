@@ -14,7 +14,6 @@ from data_printing import int_to_roman, label_decomposition
 __all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
            'parseConfDict', 'parseConfList']
 
-
 CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
 STRINGCONFKEYS = ['sampler', 'reddenig_curve', 'norm_line_label', 'norm_line_pynebCode']
 GLOBAL_LOCAL_GROUPS = ['_line_fitting', '_chemical_model']
@@ -31,7 +30,6 @@ def check_numeric_Value(s):
 
 # Function to import configuration data
 def parseObjData(file_address, sectionName, objData):
-
     parser = configparser.SafeConfigParser()
     parser.optionxform = str
     if os.path.isfile(file_address):
@@ -60,7 +58,6 @@ def parseObjData(file_address, sectionName, objData):
 
 # Function to import configparser
 def importConfigFile(config_path):
-
     # Check if file exists
     if os.path.isfile(config_path):
         cfg = configparser.ConfigParser()
@@ -84,7 +81,6 @@ def silent_remove(filename_list):
 
 # Function to map a string to its variable-type
 def formatStringEntry(entry_value, key_label, section_label='', float_format=None, nan_format='nan'):
-
     output_variable = None
 
     # None variable
@@ -169,7 +165,6 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
 
 # Function to map variables to strings
 def formatConfEntry(entry_value, float_format=None, nan_format='nan'):
-
     # Check None entry
     if entry_value is not None:
 
@@ -222,7 +217,6 @@ def check_missing_flux_values(flux):
 
 # Function to import SpecSyzer configuration file #TODO repeated
 def loadConfData(filepath, objList_check=False, group_variables=True):
-
     # Open the file
     cfg = importConfigFile(filepath)
     # TODO keys with array are always converted to numpy array even if just one
@@ -278,7 +272,6 @@ def loadConfData(filepath, objList_check=False, group_variables=True):
 
 # Function to save data to configuration file based on a previous dictionary
 def safeConfData(fileAddress, parametersDict, conf_style_path=None):
-
     # Declare the default configuration file and load it
     if conf_style_path is None:
         conf_style_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
@@ -366,7 +359,6 @@ def safeConfData(fileAddress, parametersDict, conf_style_path=None):
 
 # Function to save a parameter key-value item (or list) into the dictionary
 def parseConfList(output_file, param_key, param_value, section_name):
-
     # Check if file exists
     if os.path.isfile(output_file):
         output_cfg = configparser.ConfigParser()
@@ -395,7 +387,6 @@ def parseConfList(output_file, param_key, param_value, section_name):
 
 # Function to save a parameter dictionary into a cfg dictionary
 def parseConfDict(output_file, param_dict, section_name, clear_section=False):
-
     # TODO add logic to erase section previous results
     # TODO add logic to create a new file from dictionary of dictionaries
 
@@ -431,8 +422,8 @@ def parseConfDict(output_file, param_dict, section_name, clear_section=False):
 
 
 # Function to resample and trim spectra
-def treat_input_spectrum(output_dict, spec_wave, spec_flux, wavelengh_limits=None, resample_inc=None, norm_interval=None):
-
+def treat_input_spectrum(output_dict, spec_wave, spec_flux, wavelengh_limits=None, resample_inc=None,
+                         norm_interval=None):
     # TODO we should remove the nBases requirement by some style which can just read the number of dimensions
 
     # Store input values
@@ -504,7 +495,6 @@ def treat_input_spectrum(output_dict, spec_wave, spec_flux, wavelengh_limits=Non
 
 # Function to generate mask according to input emission lines
 def generate_object_mask(linesDf, wavelength, linelabels):
-
     # TODO This will not work for a redshifted lines log
     idcs_lineMasks = linesDf.index.isin(linelabels)
     idcs_spectrumMasks = ~linesDf.index.isin(linelabels)
@@ -525,7 +515,8 @@ def generate_object_mask(linesDf, wavelength, linelabels):
     wmin, wmax = linesDf['w3'].loc[idcs_lineMasks].values, linesDf['w4'].loc[idcs_lineMasks].values
     idxMin, idxMax = np.searchsorted(wavelength, [wmin, wmax])
     for i in range(n_lineMasks):
-        if not np.isnan(wmin[i]) and not np.isnan(wmax[i]) and (wmax[i] < wavelength[-1]): # We need this for lines beyong continuum range #TODO propose better
+        if not np.isnan(wmin[i]) and not np.isnan(wmax[i]) and (
+                wmax[i] < wavelength[-1]):  # We need this for lines beyong continuum range #TODO propose better
             w2, w3 = wavelength[idxMin[i]], wavelength[idxMax[i]]
             idx_currentMask = (wavelength >= w2) & (wavelength <= w3)
             boolean_matrix[i, :] = idx_currentMask
@@ -547,7 +538,6 @@ def generate_object_mask(linesDf, wavelength, linelabels):
 
 # Function to label the lines provided by the user
 def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None, exclude_lines=None):
-
     """
     Read emission line fluxes table
 
@@ -581,57 +571,82 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
         idx_includeLines = ~(outputDF.index.isin(include_lines))
         outputDF.drop(index=outputDF.loc[idx_includeLines].index.values, inplace=True)
 
-    # if linesDb is None:
-    #     cfg = importConfigFile(CONFIGPATH)
-    #     dir_path = os.path.dirname(os.path.realpath(__file__))
-    #
-    #     # Declare default data folder
-    #     literatureDataFolder = os.path.join(dir_path, cfg['data_location']['external_data_folder'])
-    #
-    #     # Load library databases
-    #     linesDatabasePath = os.path.join(literatureDataFolder, cfg['data_location']['lines_data_file'])
-    #     linesDb = pd.read_excel(linesDatabasePath, sheet_name=0, header=0, index_col=0)
-
     # If wavelengths are provided for the observation we use them, else we use the theoretical values
     if 'obsWave' not in outputDF.columns:
         outputDF['obsWave'] = outputDF.wavelength
     outputDF.sort_values(by=['obsWave'], ascending=True, inplace=True)
-
-    # Sort the dataframe by wavelength value in case it isn't
-
-    # Get the references for the lines treatment
-    # idx_obj_lines = linesDb.index.isin(outputDF.index)
-    # outputDF['lineType'] = linesDb.loc[idx_obj_lines].lineType.astype(str)
-    # outputDF['pynebCode'] = linesDb.loc[idx_obj_lines].pynebCode
-    # outputDF['latexLabel'] = linesDb.loc[idx_obj_lines].latexLabel
-    # outputDF['blended'] = linesDb.loc[idx_obj_lines].blended
 
     # Trim with exclude lines
     if exclude_lines is not None:
         idx_excludedLines = outputDF.index.isin(exclude_lines)
         outputDF.drop(index=outputDF.loc[idx_excludedLines].index.values, inplace=True)
 
-    # Correct missing ions from line labels if possible
-    idx_no_ion = pd.isnull(outputDF.ion)
-    for linelabel in outputDF.loc[idx_no_ion].index:
-        ion_array, wave_array, latexLabel_array = label_decomposition([linelabel])
-        if ion_array[0] in ('H1', 'He1', 'He2'):
-            outputDF.loc[linelabel, 'ion'] = ion_array[0] + 'r'
-        else:
-            outputDF.loc[linelabel, 'ion'] = ion_array[0]
-
-    # TODO we must stick to one format!!
-    for ion_old in ('H1', 'He1', 'He2'):
-        if ion_old in outputDF.ion.values:
-            idcs_old = outputDF.ion == ion_old
-            outputDF.loc[idcs_old, 'ion'] = ion_old + 'r'
+    # # Correct missing ions from line labels if possible
+    # idx_no_ion = pd.isnull(outputDF.ion)
+    # for linelabel in outputDF.loc[idx_no_ion].index:
+    #     ion_array, wave_array, latexLabel_array = label_decomposition([linelabel])
+    #     if ion_array[0] in ('H1', 'He1', 'He2'):
+    #         outputDF.loc[linelabel, 'ion'] = ion_array[0] + 'r'
+    #     else:
+    #         outputDF.loc[linelabel, 'ion'] = ion_array[0]
+    #
+    # # TODO we must stick to one format!!
+    # for ion_old in ('H1', 'He1', 'He2'):
+    #     if ion_old in outputDF.ion.values:
+    #         idcs_old = outputDF.ion == ion_old
+    #         outputDF.loc[idcs_old, 'ion'] = ion_old + 'r'
 
     return outputDF
 
 
+# Function to read the ionization data
+def load_ionization_grid(log_scale=False):
+
+    grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
+
+    lineConversionDict = dict(O2_3726A_m='OII_3727',
+                              O3_5007A='OIII_5007',
+                              He1_4471A='HeI_4471',
+                              He1_5876A='HeI_5876',
+                              He2_4686A='HeII_4686',
+                              S2_6716A='SII_6717,31',
+                              S3_9069A='SIII_9069')
+
+    # Load the data and get axes range
+    grid_array = np.loadtxt(grid_file)
+
+    grid_axes = dict(OH=np.unique(grid_array[:, 0]),
+                     Teff=np.unique(grid_array[:, 1]),
+                     logU=np.unique(grid_array[:, 2]))
+
+    # Sort the array according to 'logU', 'Teff', 'OH'
+    idcs_sorted_grid = np.lexsort((grid_array[:, 1], grid_array[:, 2], grid_array[:, 0]))
+    sorted_grid = grid_array[idcs_sorted_grid]
+
+    # Loop throught the emission line and abundances and restore the grid
+    grid_dict = {}
+    for i, item in enumerate(lineConversionDict.items()):
+        lineLabel, epmLabel = item
+
+        grid_dict[lineLabel] = np.zeros((grid_axes['logU'].size,
+                                         grid_axes['Teff'].size,
+                                         grid_axes['OH'].size))
+
+        for j, abund in enumerate(grid_axes['OH']):
+            idcsSubGrid = sorted_grid[:, 0] == abund
+            lineGrid = sorted_grid[idcsSubGrid, i + 3]
+            lineMatrix = lineGrid.reshape((grid_axes['logU'].size, grid_axes['Teff'].size))
+            grid_dict[lineLabel][:, :, j] = lineMatrix[:, :]
+
+    if log_scale:
+        for lineLabel, lineGrid in grid_dict.items():
+            grid_dict[lineLabel] = np.log10(lineGrid)
+
+    return grid_dict, grid_axes
+
+
 # Function to save data to configuration file section
 def import_optical_depth_coeff_table(file_address):
-
     opticalDepthCoeffs_df = pd.read_csv(file_address, delim_whitespace=True, header=0)
 
     opticalDepthCoeffs = {}
@@ -643,7 +658,6 @@ def import_optical_depth_coeff_table(file_address):
 
 # Function to save PYMC3 simulations using pickle
 def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
-
     if sampler is 'pymc3':
         with open(db_address, 'wb') as trace_pickle:
             pickle.dump({'model': model, 'trace': trace}, trace_pickle)
@@ -653,7 +667,6 @@ def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
 
 # Function to restore PYMC3 simulations using pickle
 def load_MC_fitting(output_address):
-
     db_address = Path(output_address)
 
     # Output dictionary with the results
@@ -680,6 +693,3 @@ def load_MC_fitting(output_address):
     fit_results['Simulation_fluxes'] = output_dict['Simulation_fluxes']
 
     return fit_results
-
-
-

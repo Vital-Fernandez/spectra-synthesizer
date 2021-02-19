@@ -31,6 +31,8 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'S2_abund': r'$S^{+}$',
              'He1r': r'$y^{+}$',
              'He2r': r'$y^{2+}$',
+             'He1': r'$y^{+}$',
+             'He2': r'$y^{2+}$',
              'S3_abund': r'$S^{2+}$',
              'O2_abund': r'$O^{+}$',
              'O3_abund': r'$O^{2+}$',
@@ -184,11 +186,9 @@ def _histplot_bins(column, bins=100):
 
 def numberStringFormat(value, cifras = 4):
     if value > 0.001:
-        newFormat = str(round(value, cifras))
+        newFormat = f'{value:.{cifras}f}'
     else:
-        newFormat = str(value)
-    # else:
-    #     newFormat = r'${:.3e}$'.format(value)
+        newFormat = f'{value:.{cifras}e}'
 
     return newFormat
 
@@ -1095,7 +1095,70 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def corner_plot(self, params_list, stats_dic, idx_region=0, true_values=None):
+    def corner_plot(self, plot_address, db_dict, true_values=None):
+
+        # Prepare the data
+        params_list = list(db_dict['Fitting_results'].keys())
+
+        # Reshape plot data
+        traces = db_dict['trace']
+        n_traces = len(params_list)
+        list_arrays, labels_list = [], []
+        for i in range(n_traces):
+
+            trace_code = params_list[i]
+            trace_array = traces[trace_code]
+
+            list_arrays.append(trace_array)
+            labels_list.append(latex_labels[trace_code])
+        traces_array = np.array(list_arrays).T
+
+        # Prepare True values
+        traceTrueValues = [None] * n_traces
+        for i, param in enumerate(params_list):
+            if param in true_values:
+                traceTrueValues[i] = true_values[param]
+
+        # Dark model
+        # # Declare figure format
+        # background = np.array((43, 43, 43)) / 255.0
+        # foreground = np.array((179, 199, 216)) / 255.0
+        #
+        # figConf = {'text.color': foreground,
+        #            'figure.figsize': (16, 10),
+        #            'figure.facecolor': background,
+        #            'axes.facecolor': background,
+        #            'axes.edgecolor': foreground,
+        #            'axes.labelcolor': foreground,
+        #            'axes.labelsize': 30,
+        #            'xtick.labelsize': 12,
+        #            'ytick.labelsize': 12,
+        #            'xtick.color': foreground,
+        #            'ytick.color': foreground,
+        #            'legend.edgecolor': 'inherit',
+        #            'legend.facecolor': 'inherit',
+        #            'legend.fontsize': 16,
+        #            'legend.loc': "center right"}
+        # rcParams.update(figConf)
+        # # Generate the plot
+        # mykwargs = {'no_fill_contours':True, 'fill_contours':True}
+        # self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
+        #                          show_titles=True, title_args={"fontsize": 200},
+        #                          truth_color='#ae3135', title_fmt='0.3f', color=foreground, **mykwargs)#, hist2d_kwargs = {'cmap':'RdGy',
+        #                                                                                    #'fill_contours':False,
+        #                                                                                    #'plot_contours':False,
+        #                                                                                    #'plot_datapoints':False})
+
+
+        # # Generate the plot
+        self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
+                                 show_titles=True, title_args={"fontsize": 200}, truths=traceTrueValues,
+                                 truth_color='#ae3135', title_fmt='0.3f')
+
+        return
+
+
+    def corner_plot_backUp(self, params_list, stats_dic, idx_region=0, true_values=None):
 
         # Remove operations from the parameters list # TODO addapt this line to discremenate better
         traces_list = stats_dic.keys()

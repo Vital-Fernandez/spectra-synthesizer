@@ -5,7 +5,7 @@ import exoplanet as xo
 from inspect import getfullargspec
 from scipy.optimize import curve_fit
 from data_reading import import_optical_depth_coeff_table
-
+from src.specsiser.data_reading import label_decomposition
 
 def compute_emissivity_grid(tempGrid, denGrid):
     tempRange = np.linspace(tempGrid[0], tempGrid[1], tempGrid[2])
@@ -125,6 +125,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
         self.denRange = None
         self.tempGridFlatten = None
         self.denGridFlatten = None
+        self.normLine = None
 
         EmissivitySurfaceFitter.__init__(self)
 
@@ -142,7 +143,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
             pn.atomicData.defaultDict = atomic_references
             pn.atomicData.resetDataFileDict()
 
-    def get_ions_dict(self, ions_list, atomic_references=pn.atomicData.defaultDict):
+    def get_ions_dict(self, ions_list, recomb_atoms=('H1', 'He1', 'He2'), atomic_references=pn.atomicData.defaultDict):
 
         # Check if the atomic dataset is the default one
         if atomic_references == pn.atomicData.defaultDict:
@@ -154,6 +155,12 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
         # Generate the dictionary with pyneb ions
         ionDict = pn.getAtomDict(ions_list)
+
+        # Remove r extension from recom 'H1', 'He1', 'He2' emissions
+        for ion_r in recomb_atoms:
+            recomb_key = f'{ion_r}r'
+            if recomb_key in ionDict:
+                ionDict[ion_r] = ionDict.pop(recomb_key)
 
         return ionDict
 
@@ -167,19 +174,20 @@ class IonEmissivity(EmissivitySurfaceFitter):
                     print(f'-- Warning: No emissivity coefficients available for line {line}')
         return
 
-    def computeEmissivityGrids(self, linesDF, ionDict, grids_folder=None, load_grids=False, norm_Ion='H1r',
-                              norm_pynebCode=4861, linesDb=None, combined_dict={}):
+    def computeEmissivityGrids(self, linesDF, ionDict, grids_folder=None, load_grids=False, normLine='H1_4861A', combined_dict={}):
 
         labels_list = linesDF.index.values
         ions_list = linesDF.ion.values
-        pynebCode_list = linesDF.pynebCode.values
+        waves = linesDF.wavelength.values
         blended_list = linesDF.blended.values
 
         # Generate a grid with the default reference line
-        Hbeta_emis_grid = ionDict[norm_Ion].getEmissivity(self.tempRange, self.denRange, wave=norm_pynebCode)
+        if normLine == 'H1_4861A':
+            self.normLine = 'H1_4861A'
+            wave_line = 4861.0
+            Hbeta_emis_grid = ionDict['H1'].getEmissivity(self.tempRange, self.denRange, wave=wave_line)
 
         self.emisGridDict = {}
-
         for i, line_label in enumerate(labels_list):
 
             # Line emissivity references
@@ -188,25 +196,22 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
             # Otherwise generate it (and save it)
             else:
-
                 # Single line:
-                if (('_m' not in line_label) or ('_b' not in line_label)) and (line_label not in combined_dict):
-                    # TODO I should change wave by label
-                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=pynebCode_list[i])
+                if ('_m' not in line_label) and ('_b' not in line_label):
+                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=waves[i])
 
                 # Blended line
                 else:
-                    # TODO in here we need to add the global database to read the components... use theoretical database.
                     emis_grid_i = np.zeros(Hbeta_emis_grid.shape)
                     for component in combined_dict[line_label].split('-'):
-                        component_wave = linesDb.loc[component].pynebCode
-                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange,
-                                                                           wave=component_wave)
+                        ion, wave, latex_label = label_decomposition(component, scalar_output=True)
+                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=wave)
+
                 if grids_folder is not None:
                     np.save(grids_folder, emis_grid_i)
 
             # Save grid dict
-            self.emisGridDict[line_label] = np.log10(emis_grid_i / Hbeta_emis_grid)
+            self.emisGridDict[line_label] = np.log10(emis_grid_i/Hbeta_emis_grid)
 
         return
 
@@ -225,7 +230,6 @@ class IonEmissivity(EmissivitySurfaceFitter):
         """
 
         # TODO add default path
-
         # Import Optical depth function coefficients
         self.ftau_coeffs = import_optical_depth_coeff_table(ftau_file_path)
 
@@ -239,8 +243,9 @@ class IonEmissivity(EmissivitySurfaceFitter):
                 a, b, c, d = self.ftau_coeffs[lineLabel]
                 ftau_grid = (a + (b + c * den_matrix + d * np.power(temp_matrix, 2)) * temp_matrix / 10000.0)
 
-                ftau_interpolator = xo.interp.RegularGridInterpolator([self.tempRange, self.denRange],
-                                                                        ftau_grid[:, :, None], nout=1)
+                ftau_interpolator = xo.interp.RegularGridInterpolator([self.tempRange,
+                                                                       self.denRange],
+                                                                       ftau_grid[:, :, None], nout=1)
 
                 self.ftau_interp[lineLabel] = ftau_interpolator.evaluate
 
@@ -270,7 +275,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
             else:
 
                 # Check if it is a blended line:
-                if '_b' not in line_label:
+                if ('_m' not in line_label) and ('_b' not in line_label):
                     # TODO I should change wave by label
                     emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempGridFlatten, self.denGridFlatten,
                                                                            wave=float(pynebCode_list[i]), product=False)
