@@ -65,7 +65,9 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'Av_star': r'$Av_{\star}$',
              'chiSq_ssp': r'$\chi^{2}_{SSP}$',
              'x': r'x interpolator$',
-             'ICF_SIV': r'$ICF\left(S^{3+}\right)$'}
+             'ICF_SIV': r'$ICF\left(S^{3+}\right)$',
+             'logU': r'$log(U)$',
+             'Teff': r'$T_{eff}$'}
 
 VAL_LIST = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
 SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]
@@ -728,14 +730,22 @@ class MCOutputDisplay(FigConf, PdfPrinter):
     def tracesPosteriorPlot(self, plot_address, db_dict, true_values=None):
 
         # Prepare the data
-        params_list = list(db_dict['Fitting_results'].keys())
+        total_params_list = np.array(list(db_dict['Fitting_results'].keys()))
+        traces_param = []
+        for param in total_params_list:
+            if '_Op' not in param:
+                traces_param.append(param)
+        traces_param = np.array(traces_param)
+
+        # Establish the params analysed
+        idx_analysis_lines = np.in1d(traces_param, db_dict['trace'].varnames)
+        params_list = traces_param[idx_analysis_lines]
 
         if true_values is not None:
             trace_true_dict = {}
             for param in params_list:
                 if param in true_values:
                     trace_true_dict[param] = true_values[param]
-
         n_traces = len(params_list)
 
         # Plot format
@@ -805,12 +815,13 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axPoterior.set_yticks([])
 
             axPoterior.set_xticks([percentile16th, median, percentile84th])
-            axPoterior.set_xticklabels(['',numberStringFormat(median),''])
+            axPoterior.set_xticklabels(['', numberStringFormat(median), ''])
             axTrace.set_yticks((percentile16th, median, percentile84th))
             axTrace.set_yticklabels((numberStringFormat(percentile16th), '', numberStringFormat(percentile84th)))
 
-            # Save the plot
-            plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+        # Save the plot
+        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
         return
 
@@ -1006,8 +1017,9 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         inputLabels = db_dict['Input_data']['lineLabels_list']
         inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
         ion_array, wave_array, latexLabel_array = label_decomposition(inputLabels, combined_dict=combined_dict)
+        trace = db_dict['trace']
+        model = db_dict['model']
 
-        # Output data
         flux_matrix = db_dict['trace']['calcFluxes_Op']
         median_values = np.median(flux_matrix, axis=0)
 
@@ -1051,8 +1063,87 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axes[i].set_title(latexLabel_array[i])
 
         plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
         return
+
+    def fluxes_photoIonization_distribution(self, plot_address, db_dict, n_columns=8, combined_dict={}):
+
+        # Input data
+        inputLabels = db_dict['Input_data']['lineLabels_list']
+        inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
+        trace = db_dict['trace']
+
+        # Output data
+        if 'calcFluxes_Op' in trace:
+            flux_matrix = db_dict['trace']['calcFluxes_Op']
+            median_values = np.median(flux_matrix, axis=0)
+        else:
+            flux_tensor_dict = {}
+            for i, lineLabel in enumerate(inputLabels):
+                tensor_ref = f'{inputLabels[i]}_Op'
+                if tensor_ref in trace.varnames:
+                    flux_tensor_dict[lineLabel] = trace[tensor_ref]
+
+            n_steps = trace[trace.varnames[0]].size
+            n_linesModel = len(flux_tensor_dict)
+            flux_matrix = np.zeros((n_steps, n_linesModel))
+            for i, item in enumerate(flux_tensor_dict.items()):
+                lineLabel, lineMatrix = item
+                flux_matrix[:, i] = flux_tensor_dict[lineLabel]
+            median_values = np.median(flux_matrix, axis=0)
+            modelLineLabels = np.array(list(flux_tensor_dict))
+
+        idx_analysis_lines = np.in1d(inputLabels, modelLineLabels)
+        inFlux = db_dict['Input_data']['inputFlux_array'][idx_analysis_lines]
+        inErr = db_dict['Input_data']['inputErr_array'][idx_analysis_lines]
+
+        ion_array, wave_array, latexLabel_array = label_decomposition(modelLineLabels, combined_dict=combined_dict)
+
+        # Declare plot grid size
+        n_lines = len(modelLineLabels)
+        n_rows = int(np.ceil(float(n_lines)/float(n_columns)))
+
+        # Declare figure format
+        size_dict = {'figure.figsize': (22, 9), 'axes.titlesize': 14, 'axes.labelsize': 10, 'legend.fontsize': 10,
+                     'xtick.labelsize': 8, 'ytick.labelsize': 3}
+        rcParams.update(size_dict)
+
+        #self.FigConf(plotSize=size_dict, Figtype='Grid', n_columns=n_columns, n_rows=n_rows)
+        fig, axes = plt.subplots(n_rows, n_columns)
+        axes = axes.ravel()
+
+        # Generate the color dict
+        obsIons = np.unique(ion_array)
+        colorNorm, cmap = self.gen_colorList(0, obsIons.size)
+        colorDict = dict(zip(obsIons, np.arange(obsIons.size)))
+
+        # Plot individual traces
+        for i in range(n_lines):
+
+            # Current line
+            label = modelLineLabels[i]
+            ion = ion_array[i]
+            trace = flux_matrix[:, i]
+            median_flux = median_values[i]
+
+            label_mean = 'Mean value: {}'.format(np.around(median_flux, 4))
+            axes[i].hist(trace, histtype='stepfilled', bins=35, alpha=.7, color=cmap(colorNorm(colorDict[ion])), density=False)
+
+            label_true = 'True value: {}'.format(np.around(inFlux[i], 3))
+            axes[i].axvline(x=inFlux[i], label=label_true, color='black', linestyle='solid')
+            axes[i].axvspan(inFlux[i] - inErr[i], inFlux[i] + inErr[i], alpha=0.5, color='grey')
+            axes[i].get_yaxis().set_visible(False)
+            axes[i].set_yticks([])
+
+            # Plot wording
+            axes[i].set_title(latexLabel_array[i])
+
+        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+
+        return
+
 
     def acorr_plot(self, traces_list, stats_dic, n_columns=4, n_rows=2):
 
@@ -1098,7 +1189,16 @@ class MCOutputDisplay(FigConf, PdfPrinter):
     def corner_plot(self, plot_address, db_dict, true_values=None):
 
         # Prepare the data
-        params_list = list(db_dict['Fitting_results'].keys())
+        total_params_list = np.array(list(db_dict['Fitting_results'].keys()))
+        traces_param = []
+        for param in total_params_list:
+            if '_Op' not in param:
+                traces_param.append(param)
+        traces_param = np.array(traces_param)
+
+        # Establish the params analysed
+        idx_analysis_lines = np.in1d(traces_param, db_dict['trace'].varnames)
+        params_list = traces_param[idx_analysis_lines]
 
         # Reshape plot data
         traces = db_dict['trace']
@@ -1115,9 +1215,14 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         # Prepare True values
         traceTrueValues = [None] * n_traces
-        for i, param in enumerate(params_list):
-            if param in true_values:
-                traceTrueValues[i] = true_values[param]
+        if true_values is not None:
+            for i, param in enumerate(params_list):
+                if param in true_values:
+                    param_value = true_values[param]
+                    if np.isscalar(param_value):
+                        traceTrueValues[i] = param_value
+                    else:
+                        traceTrueValues[i] = param_value[0]
 
         # Dark model
         # # Declare figure format
@@ -1151,9 +1256,12 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
 
         # # Generate the plot
-        self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
+        fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
                                  show_titles=True, title_args={"fontsize": 200}, truths=traceTrueValues,
                                  truth_color='#ae3135', title_fmt='0.3f')
+
+        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+        plt.close(fig)
 
         return
 
@@ -1248,39 +1356,39 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         # Loop around the parameters
         parameters_list = list(db_dict['Fitting_results'].keys())
         for param in parameters_list:
-
             if '_Op' not in param:
+                if param in db_dict['trace'].varnames:
 
-                trace_i = db_dict['trace'][param]
+                    trace_i = db_dict['trace'][param]
 
-                label = latex_labels[param]
-                mean_value = np.mean(trace_i)
-                std = np.std(trace_i)
-                n_traces = trace_i.size
-                median = np.median(trace_i)
-                p_16th = np.percentile(trace_i, 16)
-                p_84th = np.percentile(trace_i, 84)
+                    label = latex_labels[param]
+                    mean_value = np.mean(trace_i)
+                    std = np.std(trace_i)
+                    n_traces = trace_i.size
+                    median = np.median(trace_i)
+                    p_16th = np.percentile(trace_i, 16)
+                    p_84th = np.percentile(trace_i, 84)
 
-                true_value, perDif = 'None', 'None'
+                    true_value, perDif = 'None', 'None'
 
-                if true_values is not None:
-                    if param in true_values:
-                        value_param = true_values[param]
-                        if isinstance(value_param, (list, tuple, np.ndarray)):
-                            true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
-                            perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
+                    if true_values is not None:
+                        if param in true_values:
+                            value_param = true_values[param]
+                            if isinstance(value_param, (list, tuple, np.ndarray)):
+                                true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
+                                perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
 
-                        else:
-                            true_value = value_param
-                            perDif = str(np.round((1 - (true_value / median)) * 100, 2))
+                            else:
+                                true_value = value_param
+                                perDif = str(np.round((1 - (true_value / median)) * 100, 2))
 
-                    row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
+                        row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
 
-                else:
-                    row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
+                    else:
+                        row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
 
-                self.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
-                tableDF.loc[row_i[0]] = row_i[1:]
+                    self.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
+                    tableDF.loc[row_i[0]] = row_i[1:]
 
         self.generate_pdf(clean_tex=True)
         # self.generate_pdf(output_address=table_address)
@@ -1291,6 +1399,75 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             output_file.write(string_DF.encode('UTF-8'))
 
         return
+
+    def table_line_fluxes_photoIoniz(self, table_address, db_dict, combined_dict={}):
+
+        # Table headers
+        headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
+                   r'$84^{th}$ $percentil$', r'$Difference\,\%$']
+
+        # Create containers
+        tableDF = pd.DataFrame(columns=headers[1:])
+        self.create_pdfDoc(table_address, pdf_type='table')
+        self.pdf_insert_table(headers)
+
+        # Input data
+        inputLabels = db_dict['Input_data']['lineLabels_list']
+        # inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
+        trace = db_dict['trace']
+
+        # Output data
+        if 'calcFluxes_Op' in trace:
+            flux_matrix = db_dict['trace']['calcFluxes_Op']
+        else:
+            flux_tensor_dict = {}
+            for i, lineLabel in enumerate(inputLabels):
+                tensor_ref = f'{inputLabels[i]}_Op'
+                if tensor_ref in trace.varnames:
+                    flux_tensor_dict[lineLabel] = trace[tensor_ref]
+
+            n_steps = trace[trace.varnames[0]].size
+            n_linesModel = len(flux_tensor_dict)
+            flux_matrix = np.zeros((n_steps, n_linesModel))
+            for i, item in enumerate(flux_tensor_dict.items()):
+                lineLabel, lineMatrix = item
+                flux_matrix[:, i] = flux_tensor_dict[lineLabel]
+            modelLineLabels = np.array(list(flux_tensor_dict))
+
+        idx_analysis_lines = np.in1d(inputLabels, modelLineLabels)
+        inFlux = db_dict['Input_data']['inputFlux_array'][idx_analysis_lines]
+        inErr = db_dict['Input_data']['inputErr_array'][idx_analysis_lines]
+
+        # Output data
+        mean_line_values = flux_matrix.mean(axis=0)
+        std_line_values = flux_matrix.std(axis=0)
+        median_line_values = np.median(flux_matrix, axis=0)
+        p16th_line_values = np.percentile(flux_matrix, 16, axis=0)
+        p84th_line_values = np.percentile(flux_matrix, 84, axis=0)
+
+        # Array wih true error values for flux
+        diff_Percentage = np.round((1 - (median_line_values / inFlux)) * 100, 2)
+        diff_Percentage = list(map(str, diff_Percentage))
+
+        ion_array, wave_array, latexLabel_array = label_decomposition(modelLineLabels, combined_dict=combined_dict)
+
+        for i in range(inFlux.size):
+
+            # label = label_formatting(inputLabels[i])
+
+            row_i = [latexLabel_array[i], inFlux[i], mean_line_values[i], std_line_values[i], median_line_values[i], p16th_line_values[i],
+                     p84th_line_values[i], diff_Percentage[i]]
+
+            self.addTableRow(row_i, last_row=False if modelLineLabels[-1] != modelLineLabels[i] else True)
+            tableDF.loc[modelLineLabels[i]] = row_i[1:]
+
+        self.generate_pdf(clean_tex=True)
+
+        # Save the table as a dataframe.
+        with open(str(table_address) + '.txt', 'wb') as output_file:
+            string_DF = tableDF.to_string()
+            output_file.write(string_DF.encode('UTF-8'))
+
 
     def table_line_fluxes(self, table_address, db_dict, combined_dict={}):
 
@@ -1337,102 +1514,3 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         with open(str(table_address) + '.txt', 'wb') as output_file:
             string_DF = tableDF.to_string()
             output_file.write(string_DF.encode('UTF-8'))
-
-
-# class MCMC_printer(Basic_plots, Basic_tables):
-#
-#     def __init__(self):
-#
-#         # Supporting classes
-#         Basic_plots.__init__(self)
-#         Basic_tables.__init__(self)
-#
-#     def plot_emisFits(self, linelabels, emisCoeffs_dict, emisGrid_dict, output_folder):
-#
-#         te_ne_grid = (self.tempGridFlatten, self.denGridFlatten)
-#
-#         for i in range(linelabels.size):
-#             lineLabel = linelabels[i]
-#             print('--Fitting surface', lineLabel)
-#
-#             # 2D Comparison between PyNeb values and the fitted equation
-#             self.emissivitySurfaceFit_2D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_dict[lineLabel],
-#                                          self.ionEmisEq[lineLabel], te_ne_grid, self.denRange, self.tempRange)
-#
-#             output_address = '{}{}_{}_temp{}-{}_den{}-{}'.format(output_folder, 'emissivityTeDe2D', lineLabel,
-#                                                                 self.tempGridFlatten[0], self.tempGridFlatten[-1],
-#                                                                 self.denGridFlatten[0], self.denGridFlatten[-1])
-#
-#             self.savefig(output_address, resolution=200)
-#             plt.clf()
-#
-#             # # 3D Comparison between PyNeb values and the fitted equation
-#             # self.emissivitySurfaceFit_3D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_dict[lineLabel],
-#             #                              self.ionEmisEq[lineLabel], te_ne_grid)
-#             #
-#             # output_address = '{}{}_{}_temp{}-{}_den{}-{}'.format(output_folder, 'emissivityTeDe3D', lineLabel,
-#             #                                                      self.tempGridFlatten[0], self.tempGridFlatten[-1],
-#             #                                                      self.denGridFlatten[0], self.denGridFlatten[-1])
-#             # self.savefig(output_address, resolution=200)
-#             # plt.clf()
-#
-#         return
-#
-#     def plot_emisRatioFits(self, diagnoslabels, emisCoeffs_dict, emisGrid_array, output_folder):
-#
-#         # Temperature and density meshgrids
-#         X, Y = np.meshgrid(self.tem_grid_range, self.den_grid_range)
-#         XX, YY = X.flatten(), Y.flatten()
-#         te_ne_grid = (XX, YY)
-#
-#         for i in range(diagnoslabels.size):
-#             lineLabel = diagnoslabels[i]
-#             print('--Fitting surface', lineLabel)
-#
-#             # 2D Comparison between PyNeb values and the fitted equation
-#             self.emissivitySurfaceFit_2D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_array[:, i],
-#                                          self.EmisRatioEq_fit[lineLabel], te_ne_grid)
-#
-#             output_address = '{}{}_{}'.format(output_folder, 'emissivityTeDe2D', lineLabel)
-#             self.savefig(output_address, resolution=200)
-#             plt.clf()
-#
-#             # 3D Comparison between PyNeb values and the fitted equation
-#             self.emissivitySurfaceFit_3D(lineLabel, emisCoeffs_dict[lineLabel], emisGrid_array[:, i],
-#                                          self.EmisRatioEq_fit[lineLabel], te_ne_grid)
-#
-#             output_address = '{}{}_{}'.format(output_folder, 'emissivityTeDe3D', lineLabel)
-#             self.savefig(output_address, resolution=200)
-#             plt.clf()
-#
-#         return
-#
-#     def plotOuputData(self, database_address, db_dict, model_params):
-#
-#         if self.stellarCheck:
-#             self.continuumFit(db_dict)
-#             self.savefig(database_address + '_ContinuumFit', resolution=200)
-#
-#         if self.emissionCheck:
-#
-#             # Table mean values
-#             print('-- Model parameters table')
-#             self.table_mean_outputs(database_address + '_meanOutput', db_dict, self.obj_data)
-#
-#             # Line fluxes values
-#             print('-- Line fluxes table')
-#             self.table_line_fluxes(database_address + '_LineFluxes', self.lineLabels, 'calcFluxes_Op', db_dict, true_data=self.obsLineFluxes)
-#             self.fluxes_distribution(self.lineLabels, self.lineIons, 'calcFluxes_Op', db_dict, obsFluxes=self.obsLineFluxes, obsErr=self.fitLineFluxErr)
-#             self.savefig(database_address + '_LineFluxesPosteriors', resolution=200)
-#
-#             # Traces and Posteriors
-#             print('-- Model parameters posterior diagram')
-#             self.tracesPosteriorPlot(model_params, db_dict)
-#             self.savefig(database_address + '_ParamsTracesPosterios', resolution=200)
-#
-#             # Corner plot
-#             print('-- Scatter plot matrix')
-#             self.corner_plot(model_params, db_dict, self.obj_data)
-#             self.savefig(database_address + '_CornerPlot', resolution=50)
-#
-#         return

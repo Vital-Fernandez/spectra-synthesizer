@@ -32,7 +32,7 @@ from inference_model import SpectraSynthesizer
 from .physical_model.line_tools import EmissionFitting, LineMesurer, label_decomposition, lineslogFile_to_DF, redshift_calculation, save_lineslog
 from .data.spectra_files import import_fits_data
 from .print import plot
-from .data_reading import load_ionization_grid
+from .physical_model.photo_ionization_model import load_ionization_grid
 
 # Get default configuration settings
 _default_cfg = loadConfData(os.path.join(_dir_path, 'config.ini'), group_variables=False)

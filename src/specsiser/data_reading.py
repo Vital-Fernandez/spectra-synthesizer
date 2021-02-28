@@ -581,68 +581,7 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
         idx_excludedLines = outputDF.index.isin(exclude_lines)
         outputDF.drop(index=outputDF.loc[idx_excludedLines].index.values, inplace=True)
 
-    # # Correct missing ions from line labels if possible
-    # idx_no_ion = pd.isnull(outputDF.ion)
-    # for linelabel in outputDF.loc[idx_no_ion].index:
-    #     ion_array, wave_array, latexLabel_array = label_decomposition([linelabel])
-    #     if ion_array[0] in ('H1', 'He1', 'He2'):
-    #         outputDF.loc[linelabel, 'ion'] = ion_array[0] + 'r'
-    #     else:
-    #         outputDF.loc[linelabel, 'ion'] = ion_array[0]
-    #
-    # # TODO we must stick to one format!!
-    # for ion_old in ('H1', 'He1', 'He2'):
-    #     if ion_old in outputDF.ion.values:
-    #         idcs_old = outputDF.ion == ion_old
-    #         outputDF.loc[idcs_old, 'ion'] = ion_old + 'r'
-
     return outputDF
-
-
-# Function to read the ionization data
-def load_ionization_grid(log_scale=False):
-
-    grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
-
-    lineConversionDict = dict(O2_3726A_m='OII_3727',
-                              O3_5007A='OIII_5007',
-                              He1_4471A='HeI_4471',
-                              He1_5876A='HeI_5876',
-                              He2_4686A='HeII_4686',
-                              S2_6716A='SII_6717,31',
-                              S3_9069A='SIII_9069')
-
-    # Load the data and get axes range
-    grid_array = np.loadtxt(grid_file)
-
-    grid_axes = dict(OH=np.unique(grid_array[:, 0]),
-                     Teff=np.unique(grid_array[:, 1]),
-                     logU=np.unique(grid_array[:, 2]))
-
-    # Sort the array according to 'logU', 'Teff', 'OH'
-    idcs_sorted_grid = np.lexsort((grid_array[:, 1], grid_array[:, 2], grid_array[:, 0]))
-    sorted_grid = grid_array[idcs_sorted_grid]
-
-    # Loop throught the emission line and abundances and restore the grid
-    grid_dict = {}
-    for i, item in enumerate(lineConversionDict.items()):
-        lineLabel, epmLabel = item
-
-        grid_dict[lineLabel] = np.zeros((grid_axes['logU'].size,
-                                         grid_axes['Teff'].size,
-                                         grid_axes['OH'].size))
-
-        for j, abund in enumerate(grid_axes['OH']):
-            idcsSubGrid = sorted_grid[:, 0] == abund
-            lineGrid = sorted_grid[idcsSubGrid, i + 3]
-            lineMatrix = lineGrid.reshape((grid_axes['logU'].size, grid_axes['Teff'].size))
-            grid_dict[lineLabel][:, :, j] = lineMatrix[:, :]
-
-    if log_scale:
-        for lineLabel, lineGrid in grid_dict.items():
-            grid_dict[lineLabel] = np.log10(lineGrid)
-
-    return grid_dict, grid_axes
 
 
 # Function to save data to configuration file section
@@ -667,6 +606,7 @@ def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
 
 # Function to restore PYMC3 simulations using pickle
 def load_MC_fitting(output_address):
+
     db_address = Path(output_address)
 
     # Output dictionary with the results
@@ -688,8 +628,13 @@ def load_MC_fitting(output_address):
     # Restore the input data file
     configFileAddress = db_address.with_suffix('.txt')
     output_dict = loadConfData(configFileAddress, group_variables=False)
-    fit_results['Input_data'] = output_dict['Input_data']
-    fit_results['Fitting_results'] = output_dict['Fitting_results']
-    fit_results['Simulation_fluxes'] = output_dict['Simulation_fluxes']
+
+    for key in ['Input_data', 'Fitting_results', 'Simulation_fluxes']:
+        if key in output_dict:
+            fit_results[key] = output_dict[key]
+
+    # fit_results['Input_data'] = output_dict['Input_data']
+    # fit_results['Fitting_results'] = output_dict['Fitting_results']
+    # fit_results['Simulation_fluxes'] = output_dict['Simulation_fluxes']
 
     return fit_results

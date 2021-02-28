@@ -125,7 +125,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
         self.denRange = None
         self.tempGridFlatten = None
         self.denGridFlatten = None
-        self.normLine = None
+        self.normLine = 'H1_4861A'
 
         EmissivitySurfaceFitter.__init__(self)
 

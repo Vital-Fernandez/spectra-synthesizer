@@ -47,7 +47,10 @@ for idx_obj in range(n_objs):
     obj1_model.define_region(objLinesDF, objIons, objRed, objChem)
 
 # Declare sampling properties
-obj1_model.simulation_configuration(objParams['inference_model_configuration']['parameter_list'], prior_conf_dict=objParams['priors_configuration'], n_regions=n_objs)
+obj1_model.simulation_configuration(objParams['inference_model_configuration']['parameter_list'],
+                                    prior_conf_dict=objParams['priors_configuration'],
+                                    photo_ionization_grid=False,
+                                    n_regions=n_objs)
 
 # Declare simulation inference model
 obj1_model.inference_model()
@@ -59,6 +62,7 @@ obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
 fit_results = sr.load_MC_fitting(output_db)
 
 # Print the results
+#TODO make plots independent of obj1_model
 print('-- Model parameters table')
 figure_file = user_folder/f'GridEmiss_region{n_objs}_MeanOutputs'
 obj1_model.table_mean_outputs(figure_file, fit_results, true_values=objParams['true_values'])

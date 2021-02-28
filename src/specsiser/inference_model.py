@@ -9,7 +9,7 @@ from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_TSIII_relation
 from physical_model.gasEmission_functions import assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
-
+from physical_model.photo_ionization_model import ModelGridWrapper
 
 # Disable compute_test_value in theano zeros tensor
 theano.config.compute_test_value = "ignore"
@@ -31,10 +31,11 @@ def displaySimulationData(model):
     return
 
 
-class SpectraSynthesizer(MCOutputDisplay):
+class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
     def __init__(self):
 
+        ModelGridWrapper.__init__(self)
         MCOutputDisplay.__init__(self)
 
         self.paramDict = {}
@@ -54,26 +55,34 @@ class SpectraSynthesizer(MCOutputDisplay):
         self.ftauCoef = None
         self.emisGridInterpFun = None
 
+        self.ionizationModels_Check = False
+
         self.total_regions = 1
 
-    def define_region(self, objLinesDF, ion_model, extinction_model, chemistry_model, minErr=0.02):
+    def define_region(self, objLinesDF, ion_model=None, extinction_model=None, chemistry_model=None, minErr=0.02,
+                      normLine = 'H1_4861A'):
 
         # Lines data
-        idcs_lines = (objLinesDF.index != ion_model.normLine)
+        normLine = normLine if ion_model is None else ion_model.normLine
+        idcs_lines = (objLinesDF.index != normLine)
         self.lineLabels = objLinesDF.loc[idcs_lines].index.values
         self.lineIons = objLinesDF.loc[idcs_lines].ion.values
         self.emissionFluxes = objLinesDF.loc[idcs_lines].obsFlux.values
         self.emissionErr = objLinesDF.loc[idcs_lines].obsFluxErr.values
-        self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.loc[idcs_lines].obsWave.values)
 
-        self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
-        self.obsIons = chemistry_model.obsAtoms
-        self.highTemp_check = chemistry_model.indcsHighTemp
+        if extinction_model is not None:
+            self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.loc[idcs_lines].obsWave.values)
 
         # Emissivity data
-        emisGridDict = ion_model.emisGridDict
-        self.ftauCoef = ion_model.ftau_coeffs
-        self.emisGridInterpFun = gridInterpolatorFunction(emisGridDict, ion_model.tempRange, ion_model.denRange)
+        if ion_model is not None:
+            emisGridDict = ion_model.emisGridDict
+            self.ftauCoef = ion_model.ftau_coeffs
+            self.emisGridInterpFun = gridInterpolatorFunction(emisGridDict, ion_model.tempRange, ion_model.denRange)
+
+        if chemistry_model is not None:
+            self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
+            self.obsIons = chemistry_model.obsAtoms
+            self.highTemp_check = chemistry_model.indcsHighTemp
 
         # Establish minimum error on lines
         if minErr is not None:
@@ -83,16 +92,24 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
-    def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=0, verbose=True):
+    def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=0, photo_ionization_grid=False,
+                                 verbose=True):
 
-        # Priors configuration
+        # Priors configuration # TODO this one should be detected automatically
         for param in model_parameters:
             priorConf = prior_conf_dict[param + '_prior']
             self.priorDict[param] = priorConf
         self.priorDict['logParams_list'] = prior_conf_dict['logParams_list']
 
-        if verbose:
+        # Load photoIonization models
+        if photo_ionization_grid:
+            self.ionizationModels_Check = True
+            self.HII_Teff_models(self.lineLabels, self.emissionFluxes, self.emissionErr)
 
+        else:
+            self.idx_analysis_lines = np.zeros(self.lineLabels.size)
+
+        if verbose:
             print(f'\n- Input lines ({self.lineLabels.size})')
             for i in range(self.lineLabels.size):
                 print(f'-- {self.lineLabels[i]} '
@@ -133,7 +150,150 @@ class SpectraSynthesizer(MCOutputDisplay):
 
         return
 
+    def inference_photoionization(self, OH, cHbeta):
+
+        # Define observable input
+        inputGridFlux = np.log10(self.grid_emissionFluxes)
+        inputGridErr = np.log10(1 + self.grid_emissionFluxErrs / self.grid_emissionFluxes)
+        linesTensorLabels = np.array([f'{self.grid_LineLabels[i]}_Op' for i in range(self.grid_LineLabels.size)])
+
+        # Define the counters for loops
+        linesRangeArray = np.arange(self.lineLabels.size)
+
+        with pymc3.Model() as self.inferenModel:
+
+            self.set_prior('Teff')
+            self.set_prior('logU')
+            grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
+
+            for i in linesRangeArray:
+
+                if self.idx_analysis_lines[i]:
+
+                    # Declare line properties
+                    lineLabel = self.lineLabels[i]
+                    lineFlambda = self.lineFlambda[i]
+
+                    # Line Flux
+                    lineInt = self.gridInterp[lineLabel](grid_coord)[0][0]
+
+                    # Line Intensity
+                    lineFlux = lineInt - cHbeta * lineFlambda
+
+                    # Inference
+                    pymc3.Deterministic(linesTensorLabels[i], lineFlux)
+                    pymc3.Normal(lineLabel, mu=lineFlux, sd=inputGridErr[i], observed=inputGridFlux[i])
+
+            # Display simulation data
+            displaySimulationData(self.inferenModel)
+
+        return
+
     def inference_model(self, include_reddening=True, include_Thigh_prior=True):
+
+        # Container to store the synthetic line fluxes
+        self.paramDict = {}  # FIXME do I need this one for loop inferences
+
+        # Define observable input
+        fluxTensor = tt.zeros(self.lineLabels.size)
+        inputFlux = np.log10(self.emissionFluxes)
+        inputFluxErr = np.log10(1 + self.emissionErr / self.emissionFluxes)
+
+        if self.ionizationModels_Check:
+            inputGridFlux = np.log10(self.grid_emissionFluxes)
+            inputGridErr = np.log10(1 + self.grid_emissionFluxErrs / self.grid_emissionFluxes)
+
+        # Define the counters for loops
+        linesRangeArray = np.arange(self.lineLabels.size)
+
+        # Assign variable values
+        self.paramDict['H1'] = 0.0
+
+        with pymc3.Model() as self.inferenModel:
+
+            # Declare model parameters priors
+            self.set_prior('n_e')
+            self.set_prior('T_low')
+            self.set_prior('cHbeta')
+
+            # Establish model temperature structure
+            if include_Thigh_prior:
+                self.set_prior('T_high')
+            else:
+                self.paramDict['T_high'] = TOIII_TSIII_relation(self.paramDict['T_low'])
+            emisCoord_low = tt.stack([[self.paramDict['T_low'][0]], [self.paramDict['n_e'][0]]], axis=-1)
+            emisCoord_high = tt.stack([[self.paramDict['T_high'][0]], [self.paramDict['n_e'][0]]], axis=-1)
+
+            # Establish model composition
+            for ion in self.obsIons:
+                if ion != 'H1':
+                    self.set_prior(ion, abund=True, name_param=ion)
+
+            if self.ionizationModels_Check:
+                self.set_prior('Teff')
+                self.set_prior('logU')
+
+                O2_abund = tt.power(10, self.paramDict['O2'] - 12)
+                O3_abund = tt.power(10, self.paramDict['O3'] - 12)
+                OH = tt.log10(O2_abund + O3_abund) + 12
+
+                grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
+
+
+            # Loop through the lines to compute the synthetic fluxes
+            for i in linesRangeArray:
+
+                # Declare line properties
+                lineLabel = self.lineLabels[i]
+                lineIon = self.lineIons[i]
+                lineFlambda = self.lineFlambda[i]
+
+                # Compute emisivity for the corresponding ion temperature
+                T_calc = emisCoord_high if self.highTemp_check[i] else emisCoord_low
+                line_emis = self.emisGridInterpFun[lineLabel](T_calc)
+
+                # Declare fluorescence correction
+                lineftau = 0.0
+
+                # Compute line flux
+                lineFlux_i = self.emtt.compute_flux(lineLabel,
+                                                    line_emis[0][0],
+                                                    self.paramDict['cHbeta'],
+                                                    lineFlambda,
+                                                    self.paramDict[lineIon],
+                                                    lineftau,
+                                                    O3=self.paramDict['O3'],
+                                                    T_high=self.paramDict['T_high'])
+
+                if self.idx_analysis_lines[i]:
+
+                    # Line Flux
+                    lineInt = self.gridInterp[lineLabel](grid_coord)
+
+                    # Line Intensity
+                    lineFlux = lineInt - self.paramDict['cHbeta'] * lineFlambda
+
+                    # Inference
+                    Y_grid = pymc3.Normal(lineLabel, mu=lineFlux, sd=inputGridErr[i], observed=inputGridFlux[i])
+
+                # Assign the new value in the tensor
+                fluxTensor = storeValueInTensor(i, lineFlux_i[0], fluxTensor)
+
+            # Store computed fluxes
+            pymc3.Deterministic('calcFluxes_Op', fluxTensor)
+
+            # Likelihood gas components
+            Y_emision = pymc3.Normal('Y_emision', mu=fluxTensor, sd=inputFluxErr, observed=inputFlux)
+
+            # Display simulation data
+            displaySimulationData(self.inferenModel)
+
+        # self.inferenModel.profile(self.inferenModel.logpt).summary()
+        # self.inferenModel.profile(pymc3.gradient(self.inferenModel.logpt, self.inferenModel.vars)).summary()
+
+        return
+
+    def inference_backUp(self, include_reddening=True, include_Thigh_prior=True):
 
         # Container to store the synthetic line fluxes
         self.paramDict = {}  # FIXME do I need this one for loop inferences
@@ -251,6 +411,12 @@ class SpectraSynthesizer(MCOutputDisplay):
             if param == 'calcFluxes_Op':
                 trace.add_values({param: np.power(10, trace[param])}, overwrite=True)
 
+        # Convert line fluxes to natural scale
+        linesTensorLabels = np.array([f'{self.lineLabels[i]}_Op' for i in range(self.lineLabels.size)])
+        for i, lineTensorLabel in enumerate(linesTensorLabels):
+            if np.any(lineTensorLabel in model_param):
+                trace.add_values({lineTensorLabel: np.power(10, trace[lineTensorLabel])}, overwrite=True)
+
         # Save the database
         with open(db_location, 'wb') as trace_pickle:
             pickle.dump({'model': self.inferenModel, 'trace': trace}, trace_pickle)
@@ -267,14 +433,19 @@ class SpectraSynthesizer(MCOutputDisplay):
         output_params = {}
         for parameter in trace.varnames:
             if ('_log__' not in parameter) and ('interval' not in parameter) and (parameter != 'calcFluxes_Op'):
-                trace_i = trace[parameter]
-                output_params[parameter] = [trace_i.mean(axis=0), trace_i.std(axis=0)]
+                if '_Op' not in parameter:
+                    trace_i = trace[parameter]
+                    output_params[parameter] = [trace_i.mean(axis=0), trace_i.std(axis=0)]
+                else:
+                    trace_i = trace[parameter]
+                    output_params[parameter] = [trace_i.mean(axis=0), trace_i.std(axis=0)]
         parseConfDict(str(configFileAddress), output_params, section_name='Fitting_results')
 
         # Output fluxes
-        trace_i = trace['calcFluxes_Op']
-        output_params = {'outputFlux_array': trace_i.mean(axis=0), 'outputErr_array': trace_i.std(axis=0)}
-        parseConfDict(str(configFileAddress), output_params, section_name='Simulation_fluxes')
+        if 'calcFluxes_Op' in trace:
+            trace_i = trace['calcFluxes_Op']
+            output_params = {'outputFlux_array': trace_i.mean(axis=0), 'outputErr_array': trace_i.std(axis=0)}
+            parseConfDict(str(configFileAddress), output_params, section_name='Simulation_fluxes')
 
 
     # for param in param_list:
