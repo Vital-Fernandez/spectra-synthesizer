@@ -3,11 +3,6 @@ import numpy as np
 import pandas as pd
 import src.specsiser as sr
 
-
-import theano.tensor as tt
-import pymc3
-from src.specsiser.inference_model import displaySimulationData
-
 # Use the default user folder to store the results
 # user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
 user_folder = 'D:\\AstroModels\\'
@@ -21,29 +16,10 @@ for n_obj in range(n_objs):
     # We use the default simulation configuration as a base
     objParams = sr._default_cfg.copy()
 
-    # # Set the paramter values
-    # objParams['true_values'] = {'n_e': 100.0 + 50.0 * n_obj,
-    #                             'T_low': 10000.0 * (1.0 + 0.05 * n_obj),
-    #                             'T_high': sr.TOIII_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
-    #                             'tau': 0.60 + 0.15 * n_obj,
-    #                             'cHbeta': 0.08 + 0.02 * n_obj,
-    #                             'H1': 0.0,
-    #                             'He1': np.log10(0.070 + 0.005 * n_obj),
-    #                             'He2': np.log10(0.00088 + 0.0002 * n_obj),
-    #                             'O2': 7.805 + 0.15 * n_obj,
-    #                             'O3': 8.055 + 0.15 * n_obj,
-    #                             'N2': 5.845 + 0.15 * n_obj,
-    #                             'S2': 5.485 + 0.15 * n_obj,
-    #                             'S3': 6.365 + 0.15 * n_obj,
-    #                             'Ne3': 7.065 + 0.15 * n_obj,
-    #                             'Fe3': 5.055 + 0.15 * n_obj,
-    #                             'Ar3': 5.725 + 0.15 * n_obj,
-    #                             'Ar4': 5.065 + 0.15 * n_obj}
-
     # Set the paramter values
     objParams['true_values'] = {'n_e': 100.0 + 50.0 * n_obj,
                                 'T_low': 10000.0 * (1.0 + 0.05 * n_obj),
-                                'T_high': sr.TOIII_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
+                                'T_high': sr.TOIII_from_TSIII_relation(10000.0 * (1.0 + 0.05 * n_obj)),
                                 'tau': 0.60 + 0.15 * n_obj,
                                 'cHbeta': 0.08 + 0.02 * n_obj,
                                 'H1': 0.0,
@@ -154,93 +130,6 @@ for n_obj in range(n_objs):
     lineFluxes = np.power(10, lineLogFluxes)
     objLinesDF['obsFlux'] = lineFluxes
     objLinesDF['obsFluxErr'] = lineFluxes * objParams['simulation_properties']['lines_minimum_error']
-
-    # # Compute the ionization parameter from the grids
-    # gridLineDict, gridAxDict = sr.load_ionization_grid(log_scale=True)
-    # photoIonization_grid = sr.gridInterpolatorFunction(gridLineDict, gridAxDict['logU'],
-    #                                                                  gridAxDict['Teff'],
-    #                                                                  gridAxDict['OH'],
-    #                                                                  interp_type='cube')
-    # 
-    # # Manual interpolation to get the true value
-    # lineGridLabels = []
-    # lineInten = []
-    # lineIntenErr = []
-    # lineLambdaGrid = []
-    # for i in np.arange(len(objLinesDF)):
-    # 
-    #     lineLabel = objLinesDF.iloc[i].name
-    #     lineFlambda = lineFlambdas[i]
-    #     lineFlux, lineFluxErr = objLinesDF.loc[lineLabel, 'obsFlux':'obsFluxErr']
-    # 
-    #     if lineLabel in photoIonization_grid:
-    #         lineGridLabels.append(lineLabel)
-    #         # lineInten.append(lineFlux / np.power(10, - params_dict['cHbeta'] * lineFlambda))
-    #         # lineIntenErr.append(lineFluxErr / np.power(10, - params_dict['cHbeta'] * lineFlambda))
-    #         lineLambdaGrid.append(lineFlambda)
-    #         lineInten.append(lineFlux)
-    #         lineIntenErr.append(lineFluxErr)
-    # 
-    # lineGridLabels, lineInten, lineIntenErr = np.array(lineGridLabels), np.array(lineInten), np.array(lineIntenErr)
-    # lineInten, lineIntenErr = np.log10(lineInten), np.log10(lineIntenErr)
-    # lineLambdaGrid = np.array(lineLambdaGrid)
-    # lineRange = np.arange(lineGridLabels.size)
-
-    # lineGridLabels2 = []
-    # lineInten2 = []
-    # lineIntenErr2 = []
-    # for i in np.arange(len(objLinesDF)):
-    #
-    #     lineLabel = objLinesDF.iloc[i].name
-    #     lineFlambda = lineFlambdas[i]
-    #     lineFlux, lineFluxErr = objLinesDF.loc[lineLabel, 'obsFlux':'obsFluxErr']
-    #     lineFlux, lineFluxErr = np.log10(lineFlux), np.log10(lineFluxErr)
-    #
-    #
-    #     if lineLabel in photoIonization_grid:
-    #         lineGridLabels2.append(lineLabel)
-    #         lineInten2.append(lineFlux - (-params_dict['cHbeta'] * lineFlambda))
-    #         lineIntenErr2.append(lineFluxErr - (- params_dict['cHbeta'] * lineFlambda))
-    #
-    # lineGridLabels2, lineInten2, lineIntenErr2 = np.array(lineGridLabels2), np.array(lineInten2), np.array(lineIntenErr2)
-    # lineRange2 = np.arange(lineGridLabels.size)
-
-    # O35007A_flambda = lineFlambdas[11]
-    # O35007A_flux = objLinesDF.loc['O3_5007A', 'obsFlux']
-    # O35007A_flux_log = np.log10(objLinesDF.loc['O3_5007A', 'obsFlux'])
-    # O35007A_int = O35007A_flux / np.power(10, - params_dict['cHbeta'] * O35007A_flambda)
-    # O35007A_int_log = O35007A_flux_log - (- params_dict['cHbeta'] * O35007A_flambda)
-    # print(O35007A_int == np.power(10, O35007A_int_log))
-
-    # O2_abund = np.power(10, params_dict['O2'] - 12)
-    # O3_abund = np.power(10, params_dict['O3'] - 12)
-    # OH = np.log10(O2_abund + O3_abund) + 12
-    # 
-    # with pymc3.Model() as model:
-    # 
-    #     # Priors
-    #     Teff = pymc3.Uniform('Teff', lower=30000.0, upper=90000.0)
-    #     logU = pymc3.Uniform('logU', lower=-4, upper=-1.5)
-    # 
-    #     # Interpolation coord
-    #     grid_coord = tt.stack([[logU], [Teff], [OH]], axis=-1)
-    # 
-    #     # Loop throught
-    #     for i in lineRange:
-    #         # Line intensity
-    #         lineInt = photoIonization_grid[lineGridLabels[i]](grid_coord)
-    # 
-    #         lineFlux = lineInt - params_dict['cHbeta'] * lineLambdaGrid[i]
-    # 
-    #         Y_emision = pymc3.Normal(lineGridLabels[i], mu=lineFlux, sd=lineIntenErr[i], observed=lineInten[i])
-    # 
-    #     displaySimulationData(model)
-    # 
-    #     trace = pymc3.sample(5000, tune=2000, chains=2, cores=1, model=model)
-    # 
-    # print(pymc3.summary(trace))
-    # for param in ('Teff', 'logU'):
-    #     objParams['true_values'][param] = trace['logU'].mean()
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
     print(f'- Saving synthetic observation at: {user_folder}')

@@ -439,42 +439,47 @@ class PdfPrinter():
                                      'left': '1cm',
                                      'top': '1cm',
                                      'bottom': '2cm'}
+        self.table = None
 
         # TODO add dictionary with numeric formats for tables depending on the variable
 
-    def create_pdfDoc(self, fname, pdf_type='graphs', geometry_options=None, document_class=u'article'):
+    def create_pdfDoc(self, pdf_type=None, geometry_options=None, document_class=u'article'):
 
-        # TODO it would be nicer to create pdf object to do all these things
+        # Case for a complete .pdf or .tex
+        if pdf_type is not None:
 
-        self.pdf_type = pdf_type
+            self.pdf_type = pdf_type
 
-        # Update the geometry if necessary (we coud define a dictionary distinction)
-        if pdf_type == 'graphs':
-            pdf_format = {'landscape': 'true'}
-            self.pdf_geometry_options.update(pdf_format)
+            # Update the geometry if necessary (we coud define a dictionary distinction)
+            if pdf_type == 'graphs':
+                pdf_format = {'landscape': 'true'}
+                self.pdf_geometry_options.update(pdf_format)
 
-        elif pdf_type == 'table':
-            pdf_format = {'landscape': 'true',
-                          'paperwidth': '30in',
-                          'paperheight': '30in'}
-            self.pdf_geometry_options.update(pdf_format)
+            elif pdf_type == 'table':
+                pdf_format = {'landscape': 'true',
+                              'paperwidth': '30in',
+                              'paperheight': '30in'}
+                self.pdf_geometry_options.update(pdf_format)
 
-        if geometry_options is not None:
-            self.pdf_geometry_options.update(geometry_options)
+            if geometry_options is not None:
+                self.pdf_geometry_options.update(geometry_options)
 
-        # Generate the doc
-        self.pdfDoc = Document(fname, documentclass=document_class, geometry_options=self.pdf_geometry_options)
+            # Generate the doc
+            self.pdfDoc = Document(documentclass=document_class, geometry_options=self.pdf_geometry_options)
 
-        if pdf_type == 'table':
-            self.pdfDoc.packages.append(Package('preview', options=['active', 'tightpage', ]))
-            self.pdfDoc.packages.append(Package('hyperref', options=['unicode=true', ]))
-            self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
-            self.pdfDoc.packages.append(Package('nicefrac'))
-            self.pdfDoc.packages.append(
-                Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+            if pdf_type == 'table':
+                self.pdfDoc.packages.append(Package('preview', options=['active', 'tightpage', ]))
+                self.pdfDoc.packages.append(Package('hyperref', options=['unicode=true', ]))
+                self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
+                self.pdfDoc.packages.append(Package('nicefrac'))
+                self.pdfDoc.packages.append(
+                    Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
 
-        elif pdf_type == 'longtable':
-            self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
+            elif pdf_type == 'longtable':
+                self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
+
+
+        return
 
     def pdf_create_section(self, caption, add_page=False):
 
@@ -523,7 +528,7 @@ class PdfPrinter():
                 with self.pdfDoc.create(LongTable(table_format)) as self.table:
                     if column_headers != None:
                         self.table.add_hline()
-                        self.table.add_row(list( nmap(str, column_headers)), escape=False)
+                        self.table.add_row(list(map(str, column_headers)), escape=False)
                         if addfinalLine:
                             self.table.add_hline()
 
@@ -535,6 +540,8 @@ class PdfPrinter():
                 self.table.add_row(list(map(str, column_headers)), escape=False)
                 if addfinalLine:
                     self.table.add_hline()
+
+        return
 
     def pdf_insert_longtable(self, column_headers=None, table_format=None):
 
@@ -587,14 +594,23 @@ class PdfPrinter():
         if add_page:
             self.pdfDoc.append(NewPage())
 
-    def generate_pdf(self, clean_tex=True, output_address=None):
-        if output_address == None:
+    def generate_pdf(self, output_address, clean_tex=True):
+
+        if self.pdf_type is None:
+            self.table.generate_tex(str(output_address))
+
+        else:
             if self.pdf_type == 'table':
                 self.pdfDoc.append(NoEscape(r'\end{preview}'))
-                # self.pdfDoc.generate_pdf(clean_tex = clean_tex) # TODO this one does not work in windows
-            self.pdfDoc.generate_pdf(clean_tex=clean_tex, compiler='pdflatex')
-        else:
-            self.table.generate_tex(output_address)
+            self.pdfDoc.generate_pdf(filepath=str(output_address), clean_tex=clean_tex, compiler='pdflatex')
+
+        # if output_address == None:
+        #     if self.pdf_type == 'table':
+        #         self.pdfDoc.append(NoEscape(r'\end{preview}'))
+        #         # self.pdfDoc.generate_pdf(clean_tex = clean_tex) # TODO this one does not work in windows
+        #     self.pdfDoc.generate_pdf(clean_tex=clean_tex, compiler='pdflatex')
+        # else:
+        #     self.table.generate_tex(output_address)
 
         return
 
@@ -1338,7 +1354,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def table_mean_outputs(self, table_address, db_dict, true_values=None, idx_region = 0):
+    def table_mean_outputs(self, table_address, db_dict, true_values=None, file_type='table'):
 
         # Table headers
         headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
@@ -1349,7 +1365,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             headers.append(r'Difference $\%$')
 
         # Generate containers
-        self.create_pdfDoc(table_address, pdf_type='table')
+        self.create_pdfDoc(pdf_type=file_type)
         self.pdf_insert_table(headers)
         tableDF = pd.DataFrame(columns=headers[1:])
 
@@ -1390,17 +1406,16 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                     self.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
                     tableDF.loc[row_i[0]] = row_i[1:]
 
-        self.generate_pdf(clean_tex=True)
-        # self.generate_pdf(output_address=table_address)
+        self.generate_pdf(output_address=table_address)
 
         # Save the table as a dataframe.
-        with open(str(table_address) + '.txt', 'wb') as output_file:
+        with open(f'{table_address}.txt', 'wb') as output_file:
             string_DF = tableDF.to_string()
             output_file.write(string_DF.encode('UTF-8'))
 
         return
 
-    def table_line_fluxes_photoIoniz(self, table_address, db_dict, combined_dict={}):
+    def table_line_fluxes_photoIoniz(self, table_address, db_dict, combined_dict={}, file_type='table'):
 
         # Table headers
         headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
@@ -1408,7 +1423,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         # Create containers
         tableDF = pd.DataFrame(columns=headers[1:])
-        self.create_pdfDoc(table_address, pdf_type='table')
+        self.create_pdfDoc(pdf_type=file_type)
         self.pdf_insert_table(headers)
 
         # Input data
@@ -1461,7 +1476,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             self.addTableRow(row_i, last_row=False if modelLineLabels[-1] != modelLineLabels[i] else True)
             tableDF.loc[modelLineLabels[i]] = row_i[1:]
 
-        self.generate_pdf(clean_tex=True)
+        self.generate_pdf(table_address)
 
         # Save the table as a dataframe.
         with open(str(table_address) + '.txt', 'wb') as output_file:
@@ -1469,7 +1484,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             output_file.write(string_DF.encode('UTF-8'))
 
 
-    def table_line_fluxes(self, table_address, db_dict, combined_dict={}):
+    def table_line_fluxes(self, table_address, db_dict, combined_dict={}, file_type='table'):
 
         # Table headers
         headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
@@ -1477,7 +1492,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         # Create containers
         tableDF = pd.DataFrame(columns=headers[1:])
-        self.create_pdfDoc(table_address, pdf_type='table')
+        self.create_pdfDoc(pdf_type=file_type)
         self.pdf_insert_table(headers)
 
         # Input data
@@ -1508,9 +1523,9 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             self.addTableRow(row_i, last_row=False if inputLabels[-1] != inputLabels[i] else True)
             tableDF.loc[inputLabels[i]] = row_i[1:]
 
-        self.generate_pdf(clean_tex=True)
+        self.generate_pdf(table_address)
 
         # Save the table as a dataframe.
-        with open(str(table_address) + '.txt', 'wb') as output_file:
+        with open(f'{table_address}.txt', 'wb') as output_file:
             string_DF = tableDF.to_string()
             output_file.write(string_DF.encode('UTF-8'))

@@ -7,7 +7,7 @@ from pathlib import Path
 from data_reading import parseConfDict
 from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
-from physical_model.chemical_model import TOIII_TSIII_relation
+from physical_model.chemical_model import TOIII_from_TSIII_relation, TSIII_from_TOIII_relation
 from physical_model.gasEmission_functions import assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
 from physical_model.photo_ionization_model import ModelGridWrapper
 
@@ -31,6 +31,9 @@ def displaySimulationData(model):
     return
 
 
+
+
+
 class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
     def __init__(self):
@@ -50,7 +53,10 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         self.emtt = None
 
         self.obsIons = None
+
+        self.lowTemp_check = None
         self.highTemp_check = None
+        self.idcs_highTemp_ions = None
 
         self.ftauCoef = None
         self.emisGridInterpFun = None
@@ -60,7 +66,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         self.total_regions = 1
 
     def define_region(self, objLinesDF, ion_model=None, extinction_model=None, chemistry_model=None, minErr=0.02,
-                      normLine = 'H1_4861A'):
+                      normLine='H1_4861A'):
 
         # Lines data
         normLine = normLine if ion_model is None else ion_model.normLine
@@ -82,7 +88,8 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         if chemistry_model is not None:
             self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
             self.obsIons = chemistry_model.obsAtoms
-            self.highTemp_check = chemistry_model.indcsHighTemp
+            self.idcs_highTemp_ions = chemistry_model.indcsHighTemp[idcs_lines]
+
 
         # Establish minimum error on lines
         if minErr is not None:
@@ -93,7 +100,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         return
 
     def simulation_configuration(self, model_parameters, prior_conf_dict, n_regions=0, photo_ionization_grid=False,
-                                 verbose=True):
+                                 verbose=True, T_low_diag='S3_6312A', T_high_diag='O3_4363A'):
 
         # Priors configuration # TODO this one should be detected automatically
         for param in model_parameters:
@@ -105,9 +112,11 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         if photo_ionization_grid:
             self.ionizationModels_Check = True
             self.HII_Teff_models(self.lineLabels, self.emissionFluxes, self.emissionErr)
-
         else:
             self.idx_analysis_lines = np.zeros(self.lineLabels.size)
+
+        self.lowTemp_check = True if T_low_diag in self.lineLabels else False
+        self.highTemp_check = True if T_high_diag in self.lineLabels else False
 
         if verbose:
             print(f'\n- Input lines ({self.lineLabels.size})')
@@ -131,20 +140,22 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
     def set_prior(self, param, abund=False, name_param=None):
 
+        # Read distribution configuration
+        dist_name = self.priorDict[param][0]
+        dist_loc, dist_scale = self.priorDict[param][1], self.priorDict[param][2]
+        dist_norm, dist_reLoc = self.priorDict[param][3], self.priorDict[param][4]
+
         # Load the corresponding probability distribution
-        probDist = getattr(pymc3, self.priorDict[param][0])
+        probDist = getattr(pymc3, dist_name)
 
         if abund:
-            priorFunc = probDist(name_param, self.priorDict[param][1], self.priorDict[param][2]) \
-                        * self.priorDict[param][3] + self.priorDict[param][4]
+            priorFunc = probDist(name_param, dist_loc, dist_scale) * dist_norm + dist_reLoc
 
         elif probDist.__name__ in ['HalfCauchy']:  # These distributions only have one parameter
-            priorFunc = probDist(param, self.priorDict[param][1], shape=self.total_regions) \
-                        * self.priorDict[param][3] + self.priorDict[param][4]
+            priorFunc = probDist(param, dist_loc, shape=self.total_regions) * dist_norm + dist_reLoc
 
         else:
-            priorFunc = probDist(param, self.priorDict[param][1], self.priorDict[param][2], shape=self.total_regions) \
-                        * self.priorDict[param][3] + self.priorDict[param][4]
+            priorFunc = probDist(param, dist_norm, dist_scale, shape=self.total_regions) * dist_norm + dist_reLoc
 
         self.paramDict[param] = priorFunc
 
@@ -213,14 +224,17 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
             # Declare model parameters priors
             self.set_prior('n_e')
-            self.set_prior('T_low')
             self.set_prior('cHbeta')
 
             # Establish model temperature structure
-            if include_Thigh_prior:
-                self.set_prior('T_high')
-            else:
-                self.paramDict['T_high'] = TOIII_TSIII_relation(self.paramDict['T_low'])
+            # self.set_prior('T_low')
+            # if include_Thigh_prior:
+            #     self.set_prior('T_high')
+            # else:
+            #     self.paramDict['T_high'] = TOIII_from_TSIII_relation(self.paramDict['T_low'])
+            self.temperature_selection(self.lineLabels)
+
+            # Define grid interpolation variables
             emisCoord_low = tt.stack([[self.paramDict['T_low'][0]], [self.paramDict['n_e'][0]]], axis=-1)
             emisCoord_high = tt.stack([[self.paramDict['T_high'][0]], [self.paramDict['n_e'][0]]], axis=-1)
 
@@ -239,7 +253,6 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
                 grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
 
-
             # Loop through the lines to compute the synthetic fluxes
             for i in linesRangeArray:
 
@@ -249,7 +262,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                 lineFlambda = self.lineFlambda[i]
 
                 # Compute emisivity for the corresponding ion temperature
-                T_calc = emisCoord_high if self.highTemp_check[i] else emisCoord_low
+                T_calc = emisCoord_high if self.idcs_highTemp_ions[i] else emisCoord_low
                 line_emis = self.emisGridInterpFun[lineLabel](T_calc)
 
                 # Declare fluorescence correction
@@ -293,6 +306,24 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
+    def temperature_selection(self, lineLabels, T_low_diag='S3_6312A', T_high_diag='O3_4363A'):
+
+        if self.lowTemp_check:
+            self.set_prior('T_low')
+
+            if self.highTemp_check:
+                self.set_prior('T_high')
+            else:
+                self.paramDict['T_high'] = TOIII_from_TSIII_relation(self.paramDict['T_low'])
+
+        else:
+            if self.highTemp_check:
+                self.set_prior('T_high')
+
+            self.paramDict['T_low'] = TSIII_from_TOIII_relation(self.paramDict['T_high'])
+
+        return
+
     def inference_backUp(self, include_reddening=True, include_Thigh_prior=True):
 
         # Container to store the synthetic line fluxes
@@ -320,7 +351,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
             if include_Thigh_prior:
                 self.set_prior('T_high')
             else:
-                self.paramDict['T_high'] = TOIII_TSIII_relation(self.paramDict['T_low'])
+                self.paramDict['T_high'] = TOIII_from_TSIII_relation(self.paramDict['T_low'])
             emisCoord_low = tt.stack([[self.paramDict['T_low'][0]], [self.paramDict['n_e'][0]]], axis=-1)
             emisCoord_high = tt.stack([[self.paramDict['T_high'][0]], [self.paramDict['n_e'][0]]], axis=-1)
 

@@ -25,7 +25,7 @@ __version__ = _setup_cfg['metadata']['version']
 from .data_reading import *
 from .physical_model.extinction_model import ExtinctionModel
 from .physical_model.atomic_model import IonEmissivity, compute_emissivity_grid
-from .physical_model.chemical_model import DirectMethod, TOIII_TSIII_relation
+from .physical_model.chemical_model import DirectMethod, TOIII_from_TSIII_relation
 from .physical_model.gasEmission_functions import EmissionTensors, assignFluxEq2Label,\
     gridInterpolatorFunction, EmissionFluxModel
 from inference_model import SpectraSynthesizer

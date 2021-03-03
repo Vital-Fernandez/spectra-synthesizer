@@ -21,8 +21,14 @@ def trunc_limits(mu, sigma, lower_limit, upper_limit):
     return (lower_limit - mu) / sigma, (upper_limit - mu) / sigma
 
 
-def TOIII_TSIII_relation(TSIII):
-    return (1.0807 * TSIII / 10000.0 - 0.0846) * 10000.0
+def TOIII_from_TSIII_relation(T_low):
+    # From Hagele et al 2006
+    return (0.8403 * T_low / 10000.0 + 0.2689) * 10000.0
+
+
+def TSIII_from_TOIII_relation(T_high):
+    # From Hagele et al 2006
+    return (1.19 * T_high / 10000.0 - 0.32) * 10000.0
 
 
 def pyneb_diag_comp(lineLabels, int_dict):
