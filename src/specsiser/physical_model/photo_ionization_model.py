@@ -2,17 +2,19 @@ import numpy as np
 from physical_model.gasEmission_functions import gridInterpolatorFunction
 
 # Function to read the ionization data
-def load_ionization_grid(log_scale=False):
+def load_ionization_grid(log_scale=False, log_zero_value = -1000):
 
+    # grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
+
+    # TODO make an option to create the lines and
     grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
-
     lineConversionDict = dict(O2_3726A_m='OII_3727',
                               O3_5007A='OIII_5007',
+                              S2_6716A_m='SII_6717,31',
+                              S3_9069A='SIII_9069',
                               He1_4471A='HeI_4471',
                               He1_5876A='HeI_5876',
-                              He2_4686A='HeII_4686',
-                              S2_6716A_m='SII_6717,31',
-                              S3_9069A='SIII_9069')
+                              He2_4686A='HeII_4686')
 
     # Load the data and get axes range
     grid_array = np.loadtxt(grid_file)
@@ -42,10 +44,14 @@ def load_ionization_grid(log_scale=False):
 
     if log_scale:
         for lineLabel, lineGrid in grid_dict.items():
-            grid_dict[lineLabel] = np.log10(lineGrid)
+            grid_logScale = np.log10(lineGrid)
 
-    # Exclude S3_9069A
-    grid_dict.pop('S3_9069A')
+            # Replace -inf entries by -1000
+            idcs_0 = grid_logScale == -np.inf
+            if np.any(idcs_0):
+                grid_logScale[idcs_0] = log_zero_value
+
+            grid_dict[lineLabel] = grid_logScale
 
     return grid_dict, grid_axes
 

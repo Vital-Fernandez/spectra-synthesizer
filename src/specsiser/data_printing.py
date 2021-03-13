@@ -33,6 +33,8 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'He2r': r'$y^{2+}$',
              'He1': r'$y^{+}$',
              'He2': r'$y^{2+}$',
+             'OH': r'$\frac{O}{H}$',
+             'OH_err': r'$O/H\,err$',
              'S3_abund': r'$S^{2+}$',
              'O2_abund': r'$O^{+}$',
              'O3_abund': r'$O^{2+}$',
@@ -445,6 +447,7 @@ class PdfPrinter():
 
     def create_pdfDoc(self, pdf_type=None, geometry_options=None, document_class=u'article'):
 
+        # TODO integrate this into the init
         # Case for a complete .pdf or .tex
         if pdf_type is not None:
 
@@ -472,8 +475,9 @@ class PdfPrinter():
                 self.pdfDoc.packages.append(Package('hyperref', options=['unicode=true', ]))
                 self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
                 self.pdfDoc.packages.append(Package('nicefrac'))
-                self.pdfDoc.packages.append(
-                    Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+                self.pdfDoc.packages.append(Package('siunitx'))
+                self.pdfDoc.packages.append(Package('makecell'))
+                self.pdfDoc.packages.append(Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
 
             elif pdf_type == 'longtable':
                 self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
@@ -743,7 +747,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def tracesPosteriorPlot(self, plot_address, db_dict, true_values=None):
+    def tracesPosteriorPlot(self, plot_address, db_dict, true_values=None, plot_conf={}):
 
         # Prepare the data
         total_params_list = np.array(list(db_dict['Fitting_results'].keys()))
@@ -767,6 +771,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         # Plot format
         size_dict = {'axes.titlesize': 14, 'axes.labelsize': 14, 'legend.fontsize': 10,
                      'xtick.labelsize': 8, 'ytick.labelsize': 8}
+        size_dict.update(plot_conf)
         rcParams.update(size_dict)
 
         fig = plt.figure(figsize=(8, n_traces))
@@ -786,11 +791,18 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axTrace = fig.add_subplot(gs[2 * i:2 * (1 + i), :3])
             axPoterior = fig.add_subplot(gs[2 * i:2 * (1 + i), 3])
 
+
             # Label for the plot
-            if mean_value > 0.001:
-                label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4), np.round(std_dev, 4))
+            if mean_value > 10:
+                label = r'{} = ${:.0f}$$\pm${:.0f}'.format(latex_labels[trace_code], mean_value, std_dev)
             else:
-                label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
+                label = r'{} = ${:.3f}$$\pm${:.3f}'.format(latex_labels[trace_code], mean_value, std_dev)
+
+            # # Label for the plot
+            # if mean_value > 0.001:
+            #     label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4), np.round(std_dev, 4))
+            # else:
+            #     label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
 
             # Plot the traces
             axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
@@ -831,13 +843,19 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axPoterior.set_yticks([])
 
             axPoterior.set_xticks([percentile16th, median, percentile84th])
-            axPoterior.set_xticklabels(['', numberStringFormat(median), ''])
-            axTrace.set_yticks((percentile16th, median, percentile84th))
-            axTrace.set_yticklabels((numberStringFormat(percentile16th), '', numberStringFormat(percentile84th)))
+            round_n = 0 if median > 10 else 3
+            axPoterior.set_xticklabels(['', numberStringFormat(median, round_n), ''])
 
-        # Save the plot
-        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
-        plt.close(fig)
+            axTrace.set_yticks((percentile16th, median, percentile84th))
+            round_n = 0 if median > 10 else 3
+            axTrace.set_yticklabels((numberStringFormat(percentile16th,round_n), '', numberStringFormat(percentile84th,round_n)))
+
+        if plot_address is not None:
+            plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+            plt.close(fig)
+        else:
+            # plt.tight_layout()
+            plt.show()
 
         return
 
@@ -1027,7 +1045,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             self.Axis[i].set_ylabel(self.labels_latex_dic[trace_code])
             self.legend_conf(self.Axis[i], loc=2)
 
-    def fluxes_distribution(self, plot_address, db_dict, n_columns=8, combined_dict={}):
+    def fluxes_distribution(self, plot_address, db_dict, n_columns=8, combined_dict={}, plot_conf = {}):
 
         # Input data
         inputLabels = db_dict['Input_data']['lineLabels_list']
@@ -1042,10 +1060,12 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         # Declare plot grid size
         n_lines = len(inputLabels)
         n_rows = int(np.ceil(float(n_lines)/float(n_columns)))
+        n_cells = n_rows * n_columns
 
         # Declare figure format
         size_dict = {'figure.figsize': (22, 9), 'axes.titlesize': 14, 'axes.labelsize': 10, 'legend.fontsize': 10,
                      'xtick.labelsize': 8, 'ytick.labelsize': 3}
+        size_dict.update(plot_conf)
         rcParams.update(size_dict)
 
         #self.FigConf(plotSize=size_dict, Figtype='Grid', n_columns=n_columns, n_rows=n_rows)
@@ -1058,28 +1078,37 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         colorDict = dict(zip(obsIons, np.arange(obsIons.size)))
 
         # Plot individual traces
-        for i in range(n_lines):
+        for i in range(n_cells):
 
-            # Current line
-            label = inputLabels[i]
-            ion = ion_array[i]
-            trace = flux_matrix[:, i]
-            median_flux = median_values[i]
+            if i < n_lines:
 
-            label_mean = 'Mean value: {}'.format(np.around(median_flux, 4))
-            axes[i].hist(trace, histtype='stepfilled', bins=35, alpha=.7, color=cmap(colorNorm(colorDict[ion])), density=False)
+                # Current line
+                label = inputLabels[i]
+                ion = ion_array[i]
+                trace = flux_matrix[:, i]
+                median_flux = median_values[i]
 
-            label_true = 'True value: {}'.format(np.around(inFlux[i], 3))
-            axes[i].axvline(x=inFlux[i], label=label_true, color='black', linestyle='solid')
-            axes[i].axvspan(inFlux[i] - inErr[i], inFlux[i] + inErr[i], alpha=0.5, color='grey')
-            axes[i].get_yaxis().set_visible(False)
-            axes[i].set_yticks([])
+                label_mean = 'Mean value: {}'.format(np.around(median_flux, 4))
+                axes[i].hist(trace, histtype='stepfilled', bins=35, alpha=.7, color=cmap(colorNorm(colorDict[ion])), density=False)
 
-            # Plot wording
-            axes[i].set_title(latexLabel_array[i])
+                label_true = 'True value: {}'.format(np.around(inFlux[i], 3))
+                axes[i].axvline(x=inFlux[i], label=label_true, color='black', linestyle='solid')
+                axes[i].axvspan(inFlux[i] - inErr[i], inFlux[i] + inErr[i], alpha=0.5, color='grey')
+                axes[i].get_yaxis().set_visible(False)
+                axes[i].set_yticks([])
 
-        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
-        plt.close(fig)
+                # Plot wording
+                axes[i].set_title(latexLabel_array[i])
+
+            else:
+                fig.delaxes(axes[i])
+
+        if plot_address is not None:
+            plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+            plt.close(fig)
+        else:
+            # plt.tight_layout()
+            plt.show()
 
         return
 

@@ -76,8 +76,8 @@ for key, value in gridAxDict.items():
 # -------------------------------------- Test 2 --------------------------------------------------
 
 # Load synthetic observation
-linesLogAddress = user_folder / f'GridEmiss_region1of1_linesLog.txt'
-simulationData_file = user_folder / f'GridEmiss_region1of1_config.txt'
+linesLogAddress = user_folder / f'Teff_LogU_epmGrids_linesLog.txt'
+simulationData_file = user_folder / f'Teff_LogU_epmGrids_config.txt'
 
 # Load simulation parameters
 objParams = sr.loadConfData(simulationData_file, group_variables=False)
@@ -104,9 +104,7 @@ lineRange = np.arange(lineLabels.size)
 inputFlux = np.log10(lineFluxes)
 inputFluxErr = np.log10(1 + lineErr / lineFluxes)
 
-O2_abund = np.power(10, objParams['true_values']['O2'] - 12)
-O3_abund = np.power(10, objParams['true_values']['O3'] - 12)
-OH_true = np.log10(O2_abund + O3_abund) + 12
+OH_true = objParams['true_values']['OH']
 cHbeta = objParams['true_values']['cHbeta']
 
 for i, lineLabel in enumerate(lineLabels):

@@ -99,4 +99,4 @@ def import_fits_data(file_address, instrument, frame_idx=None):
         with astrofits.open(file_address) as hdul:
             data, header = hdul[frame_idx].data, hdul[frame_idx].header
 
-        return None, data, header
+        return data, header

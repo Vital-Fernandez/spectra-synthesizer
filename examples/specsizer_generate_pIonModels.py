@@ -11,10 +11,16 @@ user_folder = 'D:\\AstroModels\\'
 # We use the default simulation configuration as a base
 objParams = sr._default_cfg.copy()
 
+# # Set the paramter values
+# objParams['true_values'] = {'OH': 7.4,
+#                             'Teff': 45678.0,
+#                             'logU': -2.15,
+#                             'cHbeta': 0.5}
+
 # Set the paramter values
 objParams['true_values'] = {'OH': 7.4,
-                            'Teff': 45678.0,
-                            'logU': -2.15,
+                            'Teff': 60000.0,
+                            'logU': -2.00,
                             'cHbeta': 0.5}
 
 # Load the ionization grids
@@ -26,7 +32,7 @@ lineInterpolator_dict = gridInterpolatorFunction(gridLineDict,
                                                  interp_type='cube')
 
 # Declare lines to simulate
-lineLabels = np.array(list(lineInterpolator_dict.keys()))
+lineLabels = np.array(['O2_3726A_m', 'He1_4471A', 'He2_4686A', 'O3_5007A', 'He1_5876A', 'S2_6716A_m'])
 objParams['input_lines'] = lineLabels
 
 # We use the default lines database to generate the synthetic emission lines log for this simulation
@@ -54,12 +60,10 @@ coord_true = np.stack(([objParams['true_values']['logU']],
                        [objParams['true_values']['Teff']],
                        [objParams['true_values']['OH']]), axis=-1)
 
-print(lineFlambdas)
 for i, lineLabel in enumerate(lineLabels):
     lineInt = lineInterpolator_dict[lineLabel](coord_true).eval()[0][0]
-    print(i, lineLabel, lineInt, np.power(10, lineInt))
+    print(i, lineLabel, np.power(10, lineInt), lineFlambdas[i])
     lineLogFluxes[i] = lineInt - objParams['true_values']['cHbeta'] * lineFlambdas[i]
-
 lineFluxes = np.power(10, lineLogFluxes)
 
 # Convert to a natural scale

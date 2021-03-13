@@ -31,9 +31,6 @@ def displaySimulationData(model):
     return
 
 
-
-
-
 class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
     def __init__(self):
@@ -154,6 +151,9 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         elif probDist.__name__ in ['HalfCauchy']:  # These distributions only have one parameter
             priorFunc = probDist(param, dist_loc, shape=self.total_regions) * dist_norm + dist_reLoc
 
+        elif probDist.__name__ == 'Uniform':
+            priorFunc = probDist(param, lower=dist_loc, upper=dist_scale) * dist_norm + dist_reLoc
+
         else:
             priorFunc = probDist(param, dist_norm, dist_scale, shape=self.total_regions) * dist_norm + dist_reLoc
 
@@ -161,21 +161,32 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def inference_photoionization(self, OH, cHbeta):
+    def inference_photoionization(self, OH, cHbeta, OH_err=0.10):
 
         # Define observable input
         inputGridFlux = np.log10(self.grid_emissionFluxes)
         inputGridErr = np.log10(1 + self.grid_emissionFluxErrs / self.grid_emissionFluxes)
         linesTensorLabels = np.array([f'{self.grid_LineLabels[i]}_Op' for i in range(self.grid_LineLabels.size)])
 
+        for i, lineLabel in enumerate(self.grid_LineLabels):
+            print(lineLabel, self.grid_emissionFluxes[i], self.grid_emissionFluxErrs[i], self.idx_analysis_lines[i])
+
         # Define the counters for loops
         linesRangeArray = np.arange(self.lineLabels.size)
 
         with pymc3.Model() as self.inferenModel:
 
+            # Priors
             self.set_prior('Teff')
             self.set_prior('logU')
-            grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
+            # OH_err = pymc3.Normal('OH_err', mu=0, sigma=0.10)
+            # OH_err_prior = np.random.normal('O_abund_err', mu=0, sigma=OH_err)
+            # OH_prior = pymc3.Normal('OH', mu=OH, sigma=OH_err)
+            # OH_err_prior = pymc3.Normal('OH_err', mu=OH, sigma=OH_err)
+            OH_err_prior = np.random.normal(loc=OH, scale=OH_err)
+
+            # Interpolation coord
+            grid_coord = tt.stack([[self.paramDict['logU']], [self.paramDict['Teff']], [OH_err_prior]], axis=-1)
 
             for i in linesRangeArray:
 
@@ -193,6 +204,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
                     # Inference
                     pymc3.Deterministic(linesTensorLabels[i], lineFlux)
+                    print(lineLabel, inputGridFlux[i], inputGridErr[i])
                     pymc3.Normal(lineLabel, mu=lineFlux, sd=inputGridErr[i], observed=inputGridFlux[i])
 
             # Display simulation data
@@ -200,7 +212,54 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def inference_model(self, include_reddening=True, include_Thigh_prior=True):
+    def inference_photoionization_porsi(self, OH, cHbeta):
+
+        lineRange = np.arange(self.lineLabels.size)
+        # inputFlux = np.log10(lineFluxes)
+        # inputFluxErr = np.log10(1 + lineErr / lineFluxes)
+
+        # Define observable input
+        inputGridFlux = np.log10(self.grid_emissionFluxes)
+        inputGridErr = np.log10(1 + self.grid_emissionFluxErrs / self.grid_emissionFluxes)
+        linesTensorLabels = np.array([f'{self.grid_LineLabels[i]}_Op' for i in range(self.grid_LineLabels.size)])
+
+        for i, lineLabel in enumerate(self.lineLabels):
+            if self.idx_analysis_lines[i]:
+                print(f'{i} {lineLabel}, {linesTensorLabels[i]}: {self.grid_emissionFluxes[i]:0.3f} +/- {self.grid_emissionFluxErrs[i]:0.3f}, {self.lineFlambda[i]}')
+        self.set_prior('logU')
+        with pymc3.Model() as self.inferenModel:
+
+            self.set_prior('Teff')
+            self.set_prior('logU')
+            grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
+
+            # # Priors
+            # Teff = pymc3.Uniform('Teff', lower=30000.0, upper=90000.0)
+            # logU = pymc3.Uniform('logU', lower=-4, upper=-1.5)
+            #
+            # # Interpolation coord
+            # grid_coord = tt.stack([[logU], [Teff], [OH]], axis=-1)
+
+            # Loop throught
+            for i in lineRange:
+
+                if self.idx_analysis_lines[i]:
+
+                    # Line Flux
+                    lineInt = self.gridInterp[self.lineLabels[i]](grid_coord)
+
+                    # Line Intensity
+                    lineFlux = lineInt - cHbeta * self.lineFlambda[i]
+
+                    # Inference
+                    pymc3.Deterministic(linesTensorLabels[i], lineFlux)
+                    Y_emision = pymc3.Normal(self.lineLabels[i], mu=lineFlux, sd=inputGridErr[i], observed=inputGridFlux[i])
+
+            displaySimulationData(self.inferenModel)
+
+        return
+
+    def inference_model(self, fit_T_low=True, fit_T_high=True):
 
         # Container to store the synthetic line fluxes
         self.paramDict = {}  # FIXME do I need this one for loop inferences
@@ -227,12 +286,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
             self.set_prior('cHbeta')
 
             # Establish model temperature structure
-            # self.set_prior('T_low')
-            # if include_Thigh_prior:
-            #     self.set_prior('T_high')
-            # else:
-            #     self.paramDict['T_high'] = TOIII_from_TSIII_relation(self.paramDict['T_low'])
-            self.temperature_selection(self.lineLabels)
+            self.temperature_selection(fit_T_low, fit_T_high)
 
             # Define grid interpolation variables
             emisCoord_low = tt.stack([[self.paramDict['T_low'][0]], [self.paramDict['n_e'][0]]], axis=-1)
@@ -306,9 +360,9 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def temperature_selection(self, lineLabels, T_low_diag='S3_6312A', T_high_diag='O3_4363A'):
+    def temperature_selection(self, fit_T_low=True, fit_T_high=False):
 
-        if self.lowTemp_check:
+        if self.lowTemp_check and fit_T_low:
             self.set_prior('T_low')
 
             if self.highTemp_check:
@@ -317,7 +371,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                 self.paramDict['T_high'] = TOIII_from_TSIII_relation(self.paramDict['T_low'])
 
         else:
-            if self.highTemp_check:
+            if self.highTemp_check and fit_T_high:
                 self.set_prior('T_high')
 
             self.paramDict['T_low'] = TSIII_from_TOIII_relation(self.paramDict['T_high'])

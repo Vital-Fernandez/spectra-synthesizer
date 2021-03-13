@@ -52,7 +52,7 @@ obj1_model.simulation_configuration(objParams['inference_model_configuration']['
                                     n_regions=n_objs)
 
 # Declare simulation inference model
-obj1_model.inference_model()
+obj1_model.inference_model(fit_T_low=False)
 
 # Run the simulation
 obj1_model.run_sampler(output_db, 5000, 2000, njobs=1)
