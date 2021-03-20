@@ -522,6 +522,7 @@ class PdfPrinter():
                         self.table.add_hline()
                         # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
                         output_row = list(map(partial(format_for_table), column_headers))
+                        print('Esta es', len(output_row), output_row)
                         self.table.add_row(output_row, escape=False, strict=False)
                         if addfinalLine:
                             self.table.add_hline()
@@ -541,9 +542,20 @@ class PdfPrinter():
             self.table = Tabu(table_format)
             if column_headers != None:
                 self.table.add_hline()
-                self.table.add_row(list(map(str, column_headers)), escape=False)
+                # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
+                output_row = list(map(partial(format_for_table), column_headers))
+                self.table.add_row(output_row, escape=False, strict=False)
                 if addfinalLine:
                     self.table.add_hline()
+
+
+
+            # self.table = Tabu(table_format)
+            # if column_headers != None:
+            #     self.table.add_hline()
+            #     self.table.add_row(list(map(str, column_headers)), escape=False)
+            #     if addfinalLine:
+            #         self.table.add_hline()
 
         return
 

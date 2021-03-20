@@ -212,53 +212,6 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def inference_photoionization_porsi(self, OH, cHbeta):
-
-        lineRange = np.arange(self.lineLabels.size)
-        # inputFlux = np.log10(lineFluxes)
-        # inputFluxErr = np.log10(1 + lineErr / lineFluxes)
-
-        # Define observable input
-        inputGridFlux = np.log10(self.grid_emissionFluxes)
-        inputGridErr = np.log10(1 + self.grid_emissionFluxErrs / self.grid_emissionFluxes)
-        linesTensorLabels = np.array([f'{self.grid_LineLabels[i]}_Op' for i in range(self.grid_LineLabels.size)])
-
-        for i, lineLabel in enumerate(self.lineLabels):
-            if self.idx_analysis_lines[i]:
-                print(f'{i} {lineLabel}, {linesTensorLabels[i]}: {self.grid_emissionFluxes[i]:0.3f} +/- {self.grid_emissionFluxErrs[i]:0.3f}, {self.lineFlambda[i]}')
-        self.set_prior('logU')
-        with pymc3.Model() as self.inferenModel:
-
-            self.set_prior('Teff')
-            self.set_prior('logU')
-            grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
-
-            # # Priors
-            # Teff = pymc3.Uniform('Teff', lower=30000.0, upper=90000.0)
-            # logU = pymc3.Uniform('logU', lower=-4, upper=-1.5)
-            #
-            # # Interpolation coord
-            # grid_coord = tt.stack([[logU], [Teff], [OH]], axis=-1)
-
-            # Loop throught
-            for i in lineRange:
-
-                if self.idx_analysis_lines[i]:
-
-                    # Line Flux
-                    lineInt = self.gridInterp[self.lineLabels[i]](grid_coord)
-
-                    # Line Intensity
-                    lineFlux = lineInt - cHbeta * self.lineFlambda[i]
-
-                    # Inference
-                    pymc3.Deterministic(linesTensorLabels[i], lineFlux)
-                    Y_emision = pymc3.Normal(self.lineLabels[i], mu=lineFlux, sd=inputGridErr[i], observed=inputGridFlux[i])
-
-            displaySimulationData(self.inferenModel)
-
-        return
-
     def inference_model(self, fit_T_low=True, fit_T_high=True):
 
         # Container to store the synthetic line fluxes
@@ -272,6 +225,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         if self.ionizationModels_Check:
             inputGridFlux = np.log10(self.grid_emissionFluxes)
             inputGridErr = np.log10(1 + self.grid_emissionFluxErrs / self.grid_emissionFluxes)
+            linesTensorLabels = np.array([f'{self.grid_LineLabels[i]}_Op' for i in range(self.grid_LineLabels.size)])
 
         # Define the counters for loops
         linesRangeArray = np.arange(self.lineLabels.size)
@@ -305,7 +259,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                 O3_abund = tt.power(10, self.paramDict['O3'] - 12)
                 OH = tt.log10(O2_abund + O3_abund) + 12
 
-                grid_coord = tt.stack([[self.paramDict['logU'][0]], [self.paramDict['Teff'][0]], [OH]], axis=-1)
+                grid_coord = tt.stack([[self.paramDict['logU']], [self.paramDict['Teff']], [OH]], axis=-1)
 
             # Loop through the lines to compute the synthetic fluxes
             for i in linesRangeArray:
@@ -341,6 +295,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                     lineFlux = lineInt - self.paramDict['cHbeta'] * lineFlambda
 
                     # Inference
+                    pymc3.Deterministic(linesTensorLabels[i], lineFlux)
                     Y_grid = pymc3.Normal(lineLabel, mu=lineFlux, sd=inputGridErr[i], observed=inputGridFlux[i])
 
                 # Assign the new value in the tensor
