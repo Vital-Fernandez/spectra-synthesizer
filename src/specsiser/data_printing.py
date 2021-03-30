@@ -46,6 +46,7 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'Ar4_abund': r'$Ar^{3+}$',
              'S2': r'$\frac{S^{+}}{H^{+}}$',
              'S3': r'$\frac{S^{2+}}{H^{+}}$',
+             'S4': r'$\frac{S^{3+}}{H^{+}}$',
              'O2': r'$\frac{O^{+}}{H^{+}}$',
              'O3': r'$\frac{O^{2+}}{H^{+}}$',
              'Cl3': r'$\frac{Cl^{2+}}{H^{+}}$',
@@ -61,6 +62,14 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'S_abund': r'$\frac{SI}{HI}$',
              'Ymass_O': r'$Y_{O}$',
              'Ymass_S': r'$Y_{S}$',
+             'Ar': r'$\frac{Ar}{H}$',
+             'He': r'$\frac{He}{H}$',
+             'O': r'$\frac{O}{H}$',
+             'N': r'$\frac{N}{H}$',
+             'S': r'$\frac{S}{H}$',
+             'Ymass_O': r'$Y_{O}$',
+             'Ymass_S': r'$Y_{S}$',
+             'NO': r'$\frac{N}{O}$',
              'calcFluxes_Op': 'Line fluxes',
              'z_star': r'$z_{\star}$',
              'sigma_star': r'$\sigma_{\star}$',
@@ -522,7 +531,6 @@ class PdfPrinter():
                         self.table.add_hline()
                         # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
                         output_row = list(map(partial(format_for_table), column_headers))
-                        print('Esta es', len(output_row), output_row)
                         self.table.add_row(output_row, escape=False, strict=False)
                         if addfinalLine:
                             self.table.add_hline()
@@ -1317,7 +1325,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                                  show_titles=True, title_args={"fontsize": 200}, truths=traceTrueValues,
                                  truth_color='#ae3135', title_fmt='0.3f')
 
-        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
+        plt.savefig(plot_address, dpi=100, bbox_inches='tight')
         plt.close(fig)
 
         return

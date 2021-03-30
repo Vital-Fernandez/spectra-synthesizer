@@ -1,12 +1,14 @@
 import re
 import numpy as np
 import pyneb as pn
+import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import truncnorm, norm
-from src.specsiser.data_printing import label_decomposition
-from src.specsiser.data_reading import parseConfDict
-
-import numexpr
+from src.specsiser.data_printing import label_decomposition, PdfPrinter, latex_labels
+from src.specsiser.data_reading import parseConfDict, load_MC_fitting
+import inspect
+from pathlib import Path
+# import numexpr
 
 # Fernandez et al 2018 correction for the S^3+ fraction in the form: # TODO this should be read from a text file
 # log(Ar3/Ar4) = a_S4plus * log(S3/S4) + b_s4plus => logS4 =  (a * logS3 - logAr3 + logAr4 + b) / a
@@ -74,9 +76,192 @@ def diag_decomposition(diag_conf):
     return diag_labels
 
 
-class DirectMethod:
+def get_default_args(func):
+    signature = inspect.signature(func)
+    return {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
+
+
+class ElementAbundances:
+
+    def __init__(self):
+
+        self.abund_method_dict = {'O':  self.oxygenAbundance,
+                                  'N':  self.nitrogenAbundance,
+                                  'NO': self.NO_ratio,
+                                  'S':  self.sulfurAbundance,
+                                  'He': self.heliumAbundance}
+
+        self.element_traces = {}
+
+    def abundances_from_db(self, db_address, model_dict=None, natural_scale_params=['He1', 'He2', 'NO'], save_results_address=None):
+
+        # Check chemical model
+        if model_dict is None:
+            model_dict = self.abund_method_dict
+
+        # Restore the pymc output file
+        db_dict = load_MC_fitting(db_address)
+
+        # Convert metal abundances to a natural scale
+        ion_dict = {}
+        parameters_list = list(db_dict['Fitting_results'].keys())
+        for param in parameters_list:
+            if '_Op' not in param:
+                if param in db_dict['trace'].varnames:
+                    if param not in natural_scale_params:
+                        ion_dict[param] = np.power(10, db_dict['trace'][param] - 12)
+                    else:
+                        ion_dict[param] = db_dict['trace'][param]
+
+        # Run the abundance calculator
+        for element, model in self.abund_method_dict.items():
+            model(ion_dict, element_dict=self.element_traces)
+
+        # Convert metals to the log scale
+        for element, trace in self.element_traces.items():
+            if element in ['O', 'N', 'S', 'Ar', 'Cl', 'S4']:
+                self.element_traces[element] = 12 + np.log10(trace)
+
+        # Save the results
+        if save_results_address is not None:
+            default_address = Path(save_results_address)
+            self.save_results(default_address, self.element_traces)
+
+        return
+
+    def oxygenAbundance(self, ion_dict, input_components=['O2', 'O3'], element_dict=None):
+
+        if ion_dict.keys() >= set(input_components):
+            self.element_traces['O'] = ion_dict['O2'] + ion_dict['O3']
+
+        return
+
+    def nitrogenAbundance(self, ion_dict, input_components=['N2', 'O2', 'O3'], element_dict=None):
+
+        if ion_dict.keys() >= set(input_components):
+            NO_ratio = ion_dict['N2']/ion_dict['O2']
+            self.element_traces['N'] = NO_ratio * (ion_dict['O2'] + ion_dict['O3'])
+
+        return
+
+    def NO_ratio(self, ion_dict, input_components=['N2', 'O2'], element_dict=None):
+
+        if ion_dict.keys() >= set(input_components):
+            self.element_traces['NO'] = ion_dict['N2'] / ion_dict['O2']
+
+        return
+
+    def sulfurAbundance(self, ion_dict, input_components=['S2', 'S3'], element_dict=None):
+
+        if ion_dict.keys() >= set(input_components):
+            self.element_traces['S'] = ion_dict['S2'] + ion_dict['S3']
+
+            if ion_dict.keys() >= set(['Ar3', 'Ar4']):
+                n_iter = ion_dict['S2'].size
+                a_S3coef = np.random.normal(a_S4plus_corr, a_S4plus_corrErr, size=n_iter)
+                b_S3coef= np.random.normal(b_S4plus_corr, b_S4plus_corrErr, size=n_iter)
+
+                # a_S4plus_corr, a_S4plus_corrErr = 1.162, 0.00559
+                # b_S4plus_corr, b_S4plus_corrErr = 0.047, 0.0097
+
+                S4_log = (a_S3coef * np.log10(ion_dict['S3']) - np.log10(ion_dict['Ar3']) + np.log10(ion_dict['Ar4']) + b_S3coef) / a_S3coef
+
+                self.element_traces['S4'] = np.power(10, S4_log)
+                self.element_traces['S'] += self.element_traces['S4']
+                self.element_traces['ICF_SIV'] = self.element_traces['S'] / (ion_dict['S2'] + ion_dict['S3'])
+
+        return
+
+    def heliumAbundance(self, ion_dict, input_components=['He1'], element_dict=None):
+
+        if ion_dict.keys() >= set(input_components):
+            self.element_traces['He'] = ion_dict['He1']
+
+            if 'He2' in ion_dict.keys():
+                self.element_traces['He'] += ion_dict['He2']
+
+            if 'O' in element_dict.keys():
+                He_abund, O_abund = self.element_traces['He'], self.element_traces['O']
+                self.element_traces['Ymass_O'] = (4 * He_abund * (1 - 20 * O_abund)) / (1 + 4 * He_abund)
+
+            if 'S' in element_dict.keys():
+                n_iter = ion_dict['S2'].size
+                OI_SI_ratio = np.random.normal(OI_SI_grad, OI_SIerr_grad, size=n_iter)  # TODO check this one
+                He_abund, S_abund = self.element_traces['He'], self.element_traces['S']
+                self.element_traces['Ymass_S'] = (4 * He_abund * (1 - 20 * OI_SI_ratio * S_abund)) / (1 + 4 * He_abund)
+
+        return
+
+    def save_results(self, output_file_root, traces_dict, true_values=None, file_type='table'):
+
+        # Table headers
+        headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
+                   r'$16^{th}$ percentil', r'$84^{th}$ percentil']
+
+        if true_values is not None:
+            headers.insert(1, 'True value')
+            headers.append(r'Difference $\%$')
+
+        # Generate containers
+        pdf = PdfPrinter()
+        pdf.create_pdfDoc(pdf_type='table')
+        pdf.pdf_insert_table(headers)
+        tableDF = pd.DataFrame(columns=headers[1:])
+
+        # Loop around the parameters
+        parameters_list = list(traces_dict.keys())
+        for param in parameters_list:
+
+            trace_i = traces_dict[param]
+
+            label = latex_labels[param]
+            mean_value = np.mean(trace_i)
+            std = np.std(trace_i)
+            n_traces = trace_i.size
+            median = np.median(trace_i)
+            p_16th = np.percentile(trace_i, 16)
+            p_84th = np.percentile(trace_i, 84)
+
+            true_value, perDif = 'None', 'None'
+
+            if true_values is not None:
+                if param in true_values:
+                    value_param = true_values[param]
+                    if isinstance(value_param, (list, tuple, np.ndarray)):
+                        true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
+                        perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
+
+                    else:
+                        true_value = value_param
+                        perDif = str(np.round((1 - (true_value / median)) * 100, 2))
+
+                row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
+
+            else:
+                row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
+
+            pdf.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
+            tableDF.loc[row_i[0]] = row_i[1:]
+
+        pdf.generate_pdf(output_address=output_file_root)
+
+        # Save the table as a dataframe.
+        with open(f'{output_file_root}.txt', 'wb') as output_file:
+            string_DF = tableDF.to_string()
+            output_file.write(string_DF.encode('UTF-8'))
+
+        return
+
+
+class DirectMethod(ElementAbundances):
 
     def __init__(self, linesDF=None, highTempIons=None):
+
+        ElementAbundances.__init__(self)
 
         self.obsAtoms = None
         self.indcsLabelLines = {}
@@ -117,106 +302,6 @@ class DirectMethod:
 
     def checkIonObservance(self, ion, ionList):
         return True if ion in ionList else False
-
-    def elementalChemicalModel(self, infParamDict, ionList, iterations):
-
-        # Convert to natural scale
-        tracesDict = {}
-        for ion in ionList:
-            if ion in ['He1r', 'He2r']:
-                tracesDict[ion] = infParamDict[ion]
-            else:
-                tracesDict[ion] = np.power(10, infParamDict[ion] - 12)
-
-        # Oxygen abundance
-        if self.O2Check and self.O3Check:
-            infParamDict['O_abund'] = self.oxygenAbundance(tracesDict)
-
-        # Nitrogen abundance
-        if self.N2Check and self.O2Check and self.O3Check:
-            infParamDict['N_abund'] = self.nitrogenAbundance(tracesDict)
-
-        # Sulfur abundance
-        if self.S2Check and self.S3Check:
-            infParamDict['S_abund'] = self.sulfurAbundance(tracesDict, iterations)
-            if 'S4' in tracesDict:
-                infParamDict['ICF_SIV'] = infParamDict['S_abund'] / (tracesDict['S2'] + tracesDict['S3'])
-
-        # Helium abundance
-        if self.He1rCheck:
-            infParamDict['He_abund'] = self.heliumAbundance(tracesDict)
-
-        # Helium mass fraction by oxygen
-        if self.He1rCheck and self.O2Check and self.O3Check:
-            infParamDict['Ymass_O'] = self.heliumMassFractionOxygen(infParamDict['He_abund'], infParamDict['O_abund'])
-
-        # Helium mass fraction by sulfur
-        if self.He1rCheck and self.S2Check and self.S3Check:
-            infParamDict['Ymass_S'] = self.heliumMassFractionSulfur(infParamDict['He_abund'], infParamDict['S_abund'],
-                                                                    iterations)
-
-        # Convert metal abundances to 12 + log(X^i+) notation
-        for metal in ['O_abund', 'N_abund', 'S_abund']:
-            if metal in infParamDict:
-                infParamDict[metal] = 12 + np.log10(infParamDict[metal])
-
-        return
-
-    def oxygenAbundance(self, abundDict):
-
-        O_abund = abundDict['O2'] + abundDict['O3']
-
-        return O_abund
-
-    def nitrogenAbundance(self, abundDict):
-
-        NO_ratio = abundDict['N2'] / abundDict['O2']
-
-        N_abund = NO_ratio * (abundDict['O2'] + abundDict['O3'])
-
-        return N_abund
-
-    def sulfurAbundance(self, abundDict, iterations):
-
-        if self.Ar3Check and self.Ar4Check:
-            aS3corrArray = np.random.normal(self.a_S3corr, self.a_S3corrErr, size=iterations)
-            bS3corrArray = np.random.normal(self.b_S3corr, self.b_S3corrErr, size=iterations)
-
-            S4_abund = (aS3corrArray * np.log10(abundDict['S3']) - np.log10(abundDict['Ar3']) +
-                        np.log10(abundDict['Ar4']) + bS3corrArray) / aS3corrArray
-
-            abundDict['S4'] = np.power(10, S4_abund)
-
-            S_abund = abundDict['S2'] + abundDict['S3'] + abundDict['S4']
-
-        else:
-            S_abund = abundDict['S2'] + abundDict['S3']
-
-        return S_abund
-
-    def heliumAbundance(self, abundDict):
-
-        if self.He2rCheck:
-            He_abund = abundDict['He1r'] + abundDict['He2r']
-        else:
-            He_abund = abundDict['He1r']
-
-        return He_abund
-
-    def heliumMassFractionOxygen(self, He_abund, O_abund):
-
-        Y_fraction = (4 * He_abund * (1 - 20 * O_abund)) / (1 + 4 * He_abund)
-
-        return Y_fraction
-
-    def heliumMassFractionSulfur(self, He_abund, S_abund, iterations, OI_SI=OI_SI_grad, OI_SIerr=OI_SIerr_grad):
-
-        OI_SIArray = np.random.normal(OI_SI, OI_SIerr, size=iterations)  # TODO check this one
-
-        Y_fraction = (4 * He_abund * (1 - 20 * OI_SIArray * S_abund)) / (1 + 4 * He_abund)
-
-        return Y_fraction
-
 
 class Standard_DirectMetchod:
 

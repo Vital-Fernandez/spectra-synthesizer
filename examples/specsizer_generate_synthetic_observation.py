@@ -4,8 +4,8 @@ import pandas as pd
 import src.specsiser as sr
 
 # Use the default user folder to store the results
-# user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
-user_folder = 'D:\\AstroModels\\'
+user_folder = os.path.join(os.path.expanduser('~'), 'Astro-data/Models/')
+# user_folder = 'D:\\AstroModels\\'
 
 # Declare whether the observation is a single spectrum or multi-spectra
 n_objs = 1
