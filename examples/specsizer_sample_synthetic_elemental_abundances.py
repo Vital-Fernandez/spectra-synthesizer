@@ -34,6 +34,8 @@ objChem = sr.DirectMethod()
 table_file = user_folder/f'GridEmiss_region{n_objs}_ElementalAbund'
 objChem.abundances_from_db(output_db, save_results_address=table_file)
 
+
+
 # # Print the results
 # print('-- Model parameters table')
 # figure_file = user_folder/f'GridEmiss_region{n_objs}_MeanOutputs'

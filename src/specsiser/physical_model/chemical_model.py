@@ -33,6 +33,13 @@ def TSIII_from_TOIII_relation(T_high):
     return (1.19 * T_high / 10000.0 - 0.32) * 10000.0
 
 
+def TOII_from_TOIII_relation(T_high, n_e):
+    # From Epm and Cotini 2009
+    return ((1.2 + 0.002*n_e + 4.2/n_e) / (10000.0/T_high + 0.08 + 0.003*n_e + 2.5/n_e)) * 10000.0
+
+
+
+
 def pyneb_diag_comp(lineLabels, int_dict):
     ratio_componets = len(lineLabels)
 
@@ -302,6 +309,7 @@ class DirectMethod(ElementAbundances):
 
     def checkIonObservance(self, ion, ionList):
         return True if ion in ionList else False
+
 
 class Standard_DirectMetchod:
 
@@ -661,6 +669,22 @@ class Standard_DirectMetchod:
                             self.ionic_abund[ion_abund] = ionic_abund
                         except:
                             self.ionic_abund[ion_abund] = f'Ionic abundance failure {abund_lines}'
+
+        return
+
+    def display_results(self):
+
+        print('\n- Line ratios:')
+        for param, trace in self.obs_ratios.items():
+            print(f'-- {param}: {trace.mean():.3f}+/-{trace.std():.3f}')
+
+        print('\n- Temperature and density diagnostics:')
+        for param, trace in self.electron_params.items():
+            print(f'-- {param}: {trace.mean():.1f}+/-{trace.std():.1f}')
+
+        print('\n- Ionic abundance:')
+        for param, trace in self.ionic_abund.items():
+            print(f'-- {param}: {trace.mean():.3f}+/-{trace.std():.3f}')
 
         return
 

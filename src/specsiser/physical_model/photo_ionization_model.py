@@ -7,7 +7,7 @@ def load_ionization_grid(log_scale=False, log_zero_value = -1000):
     # grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
 
     # TODO make an option to create the lines and
-    grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
+    grid_file = '/home/vital/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
     lineConversionDict = dict(O2_3726A_m='OII_3727',
                               O3_5007A='OIII_5007',
                               S2_6716A_m='SII_6717,31',

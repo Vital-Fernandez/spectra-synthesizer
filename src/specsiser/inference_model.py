@@ -7,7 +7,7 @@ from pathlib import Path
 from data_reading import parseConfDict
 from data_printing import MCOutputDisplay
 from physical_model.gasEmission_functions import storeValueInTensor
-from physical_model.chemical_model import TOIII_from_TSIII_relation, TSIII_from_TOIII_relation
+from physical_model.chemical_model import TOIII_from_TSIII_relation, TSIII_from_TOIII_relation, TOII_from_TOIII_relation
 from physical_model.gasEmission_functions import assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
 from physical_model.photo_ionization_model import ModelGridWrapper
 
@@ -217,6 +217,9 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         # Container to store the synthetic line fluxes
         self.paramDict = {}  # FIXME do I need this one for loop inferences
 
+        # for i, line_i in enumerate(obj1_model.lineLabels):
+        #     print(f'{i} {line_i} {obj1_model.lineIons[i]}: {obj1_model.emissionFluxes[i]}, {obj1_model.lineFlambda[i]}')
+
         # Define observable input
         fluxTensor = tt.zeros(self.lineLabels.size)
         inputFlux = np.log10(self.emissionFluxes)
@@ -260,6 +263,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                 OH = tt.log10(O2_abund + O3_abund) + 12
 
                 grid_coord = tt.stack([[self.paramDict['logU']], [self.paramDict['Teff']], [OH]], axis=-1)
+
 
             # Loop through the lines to compute the synthetic fluxes
             for i in linesRangeArray:
@@ -315,7 +319,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def temperature_selection(self, fit_T_low=True, fit_T_high=False):
+    def temperature_selection(self, fit_T_low=True, fit_T_high=True):
 
         if self.lowTemp_check and fit_T_low:
             self.set_prior('T_low')
@@ -329,7 +333,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
             if self.highTemp_check and fit_T_high:
                 self.set_prior('T_high')
 
-            self.paramDict['T_low'] = TSIII_from_TOIII_relation(self.paramDict['T_high'])
+            self.paramDict['T_low'] = TOII_from_TOIII_relation(self.paramDict['T_high'], self.paramDict['n_e'])
 
         return
 

@@ -25,38 +25,38 @@ for idx_obj in range(n_objs):
 
     # Load emission lines
     merged_lines = {'O2_3726A_m': 'O2_3726A-O2_3729A', 'O2_7319A_m': 'O2_7319A-O2_7330A'}
-#     default_lines = objParams['inference_model_configuration']['input_lines']
-#     objLinesDF = sr.import_emission_line_data(linesLogAddress, include_lines=default_lines)
-#
-#     # Declare simulation physical properties
-#     objRed = sr.ExtinctionModel(Rv=objParams['simulation_properties']['R_v'],
-#                                 red_curve=objParams['simulation_properties']['reddenig_curve'],
-#                                 data_folder=objParams['data_location']['external_data_folder'])
-#
-#     objIons = sr.IonEmissivity(tempGrid=objParams['simulation_properties']['temp_grid'],
-#                                denGrid=objParams['simulation_properties']['den_grid'])
-#
-#     # Generate interpolator from the emissivity grids
-#     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
-#     objIons.computeEmissivityGrids(objLinesDF, ionDict, combined_dict=merged_lines)
-#
-#     # Declare chemical model
-#     objChem = sr.DirectMethod(linesDF=objLinesDF, highTempIons=objParams['simulation_properties']['high_temp_ions_list'])
-#
-#     # Declare region physical model
-#     obj1_model.define_region(objLinesDF, objIons, objRed, objChem)
-#
-# # Declare sampling properties
-# obj1_model.simulation_configuration(objParams['inference_model_configuration']['parameter_list'],
-#                                     prior_conf_dict=objParams['priors_configuration'],
-#                                     photo_ionization_grid=False,
-#                                     n_regions=n_objs)
-#
-# # Declare simulation inference model
-# obj1_model.inference_model()
-#
-# # Run the simulation
-# obj1_model.run_sampler(output_db, 2000, 2000, nchains=3, njobs=6)
+    default_lines = objParams['inference_model_configuration']['input_lines']
+    objLinesDF = sr.import_emission_line_data(linesLogAddress, include_lines=default_lines)
+
+    # Declare simulation physical properties
+    objRed = sr.ExtinctionModel(Rv=objParams['simulation_properties']['R_v'],
+                                red_curve=objParams['simulation_properties']['reddenig_curve'],
+                                data_folder=objParams['data_location']['external_data_folder'])
+
+    objIons = sr.IonEmissivity(tempGrid=objParams['simulation_properties']['temp_grid'],
+                               denGrid=objParams['simulation_properties']['den_grid'])
+
+    # Generate interpolator from the emissivity grids
+    ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
+    objIons.computeEmissivityGrids(objLinesDF, ionDict, combined_dict=merged_lines)
+
+    # Declare chemical model
+    objChem = sr.DirectMethod(linesDF=objLinesDF, highTempIons=objParams['simulation_properties']['high_temp_ions_list'])
+
+    # Declare region physical model
+    obj1_model.define_region(objLinesDF, objIons, objRed, objChem)
+
+# Declare sampling properties
+obj1_model.simulation_configuration(objParams['inference_model_configuration']['parameter_list'],
+                                    prior_conf_dict=objParams['priors_configuration'],
+                                    photo_ionization_grid=False,
+                                    n_regions=n_objs)
+
+# Declare simulation inference model
+obj1_model.inference_model()
+
+# Run the simulation
+obj1_model.run_sampler(output_db, 2000, 2000, nchains=3, njobs=6)
 
 # Plot the results
 fit_results = sr.load_MC_fitting(output_db)
