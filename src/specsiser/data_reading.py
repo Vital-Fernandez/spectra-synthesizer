@@ -537,7 +537,7 @@ def generate_object_mask(linesDf, wavelength, linelabels):
 
 
 # Function to label the lines provided by the user
-def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None, exclude_lines=None):
+def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=None, exclude_lines=None):
     """
     Read emission line fluxes table
 
@@ -560,13 +560,17 @@ def import_emission_line_data(linesLogAddress, linesDb=None, include_lines=None,
     """
 
     # Output DF # TODO we need to replace for a open excel format
-    try:
-        outputDF = pd.read_excel(linesLogAddress, sheet_name=0, header=0, index_col=0)
+    if linesDF is None:
+        try:
+            outputDF = pd.read_excel(linesLogAddress, sheet_name=0, header=0, index_col=0)
 
-    except:
-        outputDF = pd.read_csv(linesLogAddress, delim_whitespace=True, header=0, index_col=0)
+        except:
+            outputDF = pd.read_csv(linesLogAddress, delim_whitespace=True, header=0, index_col=0)
 
-    # Trim with include lines
+    else:
+        outputDF = linesDF
+
+        # Trim with include lines
     if include_lines is not None:
         idx_includeLines = ~(outputDF.index.isin(include_lines))
         outputDF.drop(index=outputDF.loc[idx_includeLines].index.values, inplace=True)
