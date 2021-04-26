@@ -55,6 +55,7 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'N2': r'$\frac{N^{+}}{H^{+}}$',
              'Ar3': r'$\frac{Ar^{2+}}{H^{+}}$',
              'Ar4': r'$\frac{Ar^{3+}}{H^{+}}$',
+             'Cl4': r'$\frac{Cl^{3+}}{H^{+}}$',
              'Ar_abund': r'$\frac{ArI}{HI}$',
              'He_abund': r'$\frac{HeI}{HI}$',
              'O_abund': r'$\frac{OI}{HI}$',
@@ -1208,7 +1209,6 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         plt.close(fig)
 
         return
-
 
     def acorr_plot(self, traces_list, stats_dic, n_columns=4, n_rows=2):
 

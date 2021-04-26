@@ -216,10 +216,14 @@ def check_missing_flux_values(flux):
 
 
 # Function to import SpecSyzer configuration file #TODO repeated
-def loadConfData(filepath, objList_check=False, group_variables=True):
+def loadConfData(filepath, objList_check=False, group_variables=False):
+
     # Open the file
-    cfg = importConfigFile(filepath)
-    # TODO keys with array are always converted to numpy array even if just one
+    if Path(filepath).is_file():
+        cfg = importConfigFile(filepath)
+        # TODO keys with array are always converted to numpy array even if just one
+    else:
+        exit(f'-ERROR Configuration file not found at:\n{filepath}')
 
     if group_variables:
         #
@@ -537,7 +541,7 @@ def generate_object_mask(linesDf, wavelength, linelabels):
 
 
 # Function to label the lines provided by the user
-def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=None, exclude_lines=None):
+def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=None, exclude_lines=None, remove_neg=True):
     """
     Read emission line fluxes table
 
@@ -570,7 +574,11 @@ def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=
     else:
         outputDF = linesDF
 
-        # Trim with include lines
+    if remove_neg:
+        idx_neg = outputDF.intg_flux < 0.0
+        outputDF.drop(index=outputDF.loc[idx_neg].index.values, inplace=True)
+
+    # Trim with include lines
     if include_lines is not None:
         idx_includeLines = ~(outputDF.index.isin(include_lines))
         outputDF.drop(index=outputDF.loc[idx_includeLines].index.values, inplace=True)

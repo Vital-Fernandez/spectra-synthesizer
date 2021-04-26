@@ -953,7 +953,7 @@ class LineMesurer(EmissionFitting):
         return
 
     def plot_spectrum_components(self, continuumFlux=None, obsLinesTable=None, matchedLinesDF=None, noise_region=None,
-                                 log_scale=False, plotConf={}, axConf={}, output_address=None):
+                                 log_scale=False, plotConf={}, axConf={}, specLabel='Observed spectrum', output_address=None):
 
         # Plot Configuration
         defaultConf = STANDARD_PLOT.copy()
@@ -962,7 +962,7 @@ class LineMesurer(EmissionFitting):
         fig, ax = plt.subplots()
 
         # Plot the spectrum
-        ax.step(self.wave, self.flux, label='Observed spectrum')
+        ax.step(self.wave, self.flux, label=specLabel)
 
         # Plot the continuum if available
         if continuumFlux is not None:

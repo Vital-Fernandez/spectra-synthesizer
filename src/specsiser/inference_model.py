@@ -417,7 +417,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def run_sampler(self, db_location, iterations, tuning, nchains=2, njobs=2):
+    def run_sampler(self, db_location, iterations, tuning, nchains=2, njobs=2, fits_store=False):
 
         # Confirm output folder
         db_location = Path(db_location)
@@ -492,20 +492,3 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
             parseConfDict(str(configFileAddress), output_params, section_name='Simulation_fluxes')
 
 
-    # for param in param_list:
-    #     for n_region in range(self.total_regions):
-    #         param_key = f'{param}_{n_region}'
-    #         if n_region == 0:
-    #             self.__setattr__(param, self.region_data[param_key])
-    #         else:
-    #             self.__setattr__(param, np.append(self.__getattribute__(param), self.region_data[param_key]))
-    #
-    # for param in dictionary_list:
-    #     for n_region in range(self.total_regions):
-    #         param_key = f'{param}_{n_region}'
-    #         if n_region == 0:
-    #             self.__setattr__(param, self.region_data[param_key])
-    #         else:
-    #             current_dict = self.__getattribute__(param)
-    #             current_dict.update(self.region_data[param_key])
-    #             self.__setattr__(param, current_dict)
