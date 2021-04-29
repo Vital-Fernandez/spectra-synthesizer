@@ -11,7 +11,7 @@ from matplotlib.widgets import SpanSelector
 from specutils.manipulation import noise_region_uncertainty
 from specutils.fitting import find_lines_threshold, find_lines_derivative, fit_generic_continuum
 from specutils import Spectrum1D, SpectralRegion
-from matplotlib import pyplot as plt, rcParams, spines
+from matplotlib import pyplot as plt, rcParams, spines, gridspec
 from scipy import stats, optimize, integrate
 from data_reading import label_decomposition
 from pathlib import Path
@@ -30,6 +30,8 @@ GAUSSIAN_ATTRIBUTES = ['amplitude', 'center', 'sigma', 'fwhm', 'height']
 PARAMETER_ATTRIBUTES = ['name', 'value', 'vary', 'min', 'max', 'expr', 'brute_step']
 PARAMETER_DEFAULT = dict(name=None, value=None, vary=True, min=-np.inf, max=np.inf, expr=None)
 HEIGHT_FORMULA = f'0.3989423 * component_amplitude / component_sigma'
+
+c_KMpS = 299792.458
 
 DATABASE_PATH = Path(__file__, '../../').resolve()/'literature_data'/'lines_data.xlsx'
 
@@ -66,6 +68,10 @@ SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I
 
 FLUX_TEX_TABLE_HEADERS = [r'$Transition$', '$EW(\AA)$', '$F(\lambda)$', '$I(\lambda)$']
 FLUX_TXT_TABLE_HEADERS = [r'$Transition$', 'EW', 'EW_error', 'F(lambda)', 'F(lambda)_error', 'I(lambda)', 'I(lambda)_error']
+
+KIN_TEX_TABLE_HEADERS = [r'$Transition$', r'$Comp$', r'$v_{r}\left(\nicefrac{km}{s}\right)$', r'$\sigma_{int}\left(\nicefrac{km}{s}\right)$', r'Flux $(\nicefrac{erg}{cm^{-2} s^{-1} \AA^{-1})}$']
+KIN_TXT_TABLE_HEADERS = [r'$Transition$', r'$Comp$', 'v_r', 'v_r_error', 'sigma_int', 'sigma_int_error', 'flux', 'flux_error']
+
 
 SQRT2PI = np.sqrt(2*np.pi)
 
@@ -240,8 +246,8 @@ def redshift_calculation(obs_array, emis_array, unit='wavelength', verbose=False
     return z_array.mean(), z_array.std()
 
 
-def wavelength_to_vel(delta_lambda, lambda_wave, c=299792.458):
-    return c * (delta_lambda/lambda_wave)
+def wavelength_to_vel(delta_lambda, lambda_wave):
+    return c_KMpS * (delta_lambda/lambda_wave)
 
 
 def save_lineslog(linesDF, file_address):
@@ -259,6 +265,59 @@ def isDigit(x):
         return True
     except ValueError:
         return False
+
+
+def kinematic_component_labelling(line_latex_label, comp_ref):
+
+    if len(comp_ref) != 2:
+        print(f'-- Warning: Components label for {line_latex_label} is {comp_ref}. Code only prepare for a 2 character description (ex. n1, w2...)')
+
+    number = comp_ref[-1]
+    letter = comp_ref[0]
+
+    if letter in ('n', 'w'):
+        if letter == 'n':
+            comp_label = f'Narrow {number}'
+        if letter == 'w':
+            comp_label = f'Wide {number}'
+    else:
+        comp_label = f'{letter}{number}'
+
+    if '-' in line_latex_label:
+        lineEmisLabel = line_latex_label.replace(f'-{comp_ref}', '')
+    else:
+        lineEmisLabel = line_latex_label
+
+    return comp_label, lineEmisLabel
+
+
+def import_kinematics_from_line(line_label, user_conf, line_df):
+
+    kinemLine = user_conf.get(f'{line_label}_kinem')
+
+    if kinemLine is not None:
+
+        if kinemLine not in line_df.index:
+            print(f'-- WARNING: {kinemLine} has not been measured. Its kinematics were not copied to {line_label}')
+        else:
+            vr_parent = line_df.loc[kinemLine, 'v_r':'v_r_err'].values
+            sigma_parent = line_df.loc[kinemLine, 'sigma_vel':'sigma_err_vel'].values
+            wave_parent = line_df.loc[kinemLine, 'wavelength']
+
+            ion, waveLine, latexLabelLine = label_decomposition(line_label, scalar_output=True)
+
+            # Convert parent velocity units to child angstrom units
+            for param_ext in ('center', 'sigma'):
+                param_label = f'{line_label}_{param_ext}'
+                if param_label in user_conf: print(f'-- WARNING: {param_label} overwritten by {kinemLine} kinematics')
+                if param_ext == 'center':
+                    param_value = waveLine * (1 + vr_parent / c_KMpS)
+                else:
+                    param_value = waveLine * (sigma_parent / c_KMpS)
+                user_conf[param_label] = {'value': param_value[0], 'vary': False}
+                user_conf[f'{param_label}_err'] = {'value': param_value[1], 'vary': False}
+
+    return
 
 
 class EmissionFitting:
@@ -413,7 +472,7 @@ class EmissionFitting:
 
         return
 
-    def line_fit(self, algorithm, lineLabel, idcs_line, idcs_continua, iter_n=500, user_conf={}):
+    def line_fit(self, algorithm, lineLabel, idcs_line, idcs_continua, iter_n=500, user_conf={}, lineDF=[]):
 
         # Check if line is in a blended group
         lineRef = lineLabel
@@ -426,11 +485,14 @@ class EmissionFitting:
         idcsFit = idcs_line + idcs_continua
         x_array, y_array = self.wave[idcsFit], self.flux[idcsFit]
 
-        # Define fiting weights according to the error
+        # Define fiting weights according to the error # TODO better to give an option introduce the error you want
         if self.errFlux is None:
             weights_array = np.full(idcsFit.sum(), fill_value=1.0/self.std_continuum)
-        else: # TODO better to give an option introduce the error you want
+        else:
             weights_array = 1.0/np.sqrt(np.abs(self.errFlux[idcsFit]))
+
+        # Check the kinematics import # TODO to change sigma_err_vel to sigma_vel_err
+        import_kinematics_from_line(lineLabel, user_conf, lineDF)
 
         # Run fit
         if algorithm == 'mc':
@@ -466,7 +528,6 @@ class EmissionFitting:
         # For blended lines replace the first line reference waves by the peak one
         if self.blended_check:
             ref_wave = theoWave_arr
-            ref_wave[0] = self.peakWave
 
         # Define fitting params for each component
         fit_model = Model(linear_model)
@@ -475,15 +536,15 @@ class EmissionFitting:
             # Linear
             if idx_comp == 0:
                 fit_model.prefix = f'{comp}_cont_' # For a blended line the continuum conf is defined by first line
-                self.define_param(fit_model, f'{comp}_cont_slope', self.m_continuum, self._SLOPE_PAR, user_conf)
-                self.define_param(fit_model, f'{comp}_cont_intercept', self.n_continuum, self._INTER_PAR, user_conf)
+                self.define_param(fit_model, comp, 'cont_slope', self.m_continuum, self._SLOPE_PAR, user_conf)
+                self.define_param(fit_model, comp, 'cont_intercept', self.n_continuum, self._INTER_PAR, user_conf)
 
             # Gaussian
             fit_model += Model(gaussian_model, prefix=f'{comp}_')
-            self.define_param(fit_model, f'{comp}_amplitude', self.peakFlux-self.cont, self._AMP_PAR, user_conf)
-            self.define_param(fit_model, f'{comp}_center', ref_wave[idx_comp], self._MU_PAR, user_conf)
-            self.define_param(fit_model, f'{comp}_sigma', 1.0, self._SIG_PAR, user_conf)
-            self.define_param(fit_model, f'{comp}_area', comp, self._AREA_PAR, user_conf)
+            self.define_param(fit_model, comp, 'amplitude', self.peakFlux-self.cont, self._AMP_PAR, user_conf)
+            self.define_param(fit_model, comp, 'center', ref_wave[idx_comp], self._MU_PAR, user_conf)
+            self.define_param(fit_model, comp, 'sigma', 1.0, self._SIG_PAR, user_conf)
+            self.define_param(fit_model, comp, 'area', comp, self._AREA_PAR, user_conf)
 
         # Fit the line
         self.fit_params = fit_model.make_params()
@@ -519,10 +580,11 @@ class EmissionFitting:
                 eqw_g[i], eqwErr_g[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
 
             # Kinematics
-            self.v_r[i] = wavelength_to_vel(self.p1[1, i] - ref_wave[i], ref_wave[i])
-            self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], ref_wave[i]))
-            self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], ref_wave[i])
-            self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], ref_wave[i])
+            print(f'Operation {line} Vr: fit {self.p1[1, i]}, theo {theoWave_arr[i]}')
+            self.v_r[i] = wavelength_to_vel(self.p1[1, i] - theoWave_arr[i], theoWave_arr[i])
+            self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], theoWave_arr[i]))
+            self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], theoWave_arr[i])
+            self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], theoWave_arr[i])
 
         if self.blended_check:
             self.eqw, self.eqwErr = eqw_g, eqwErr_g
@@ -531,7 +593,9 @@ class EmissionFitting:
 
         return
 
-    def define_param(self, model_obj, param_ref, param_value, default_conf={}, user_conf={}):
+    def define_param(self, model_obj, line_label, param_label, param_value, default_conf={}, user_conf={}):
+
+        param_ref = f'{line_label}_{param_label}'
 
         # Overwrite default by the one provided by the user
         if param_ref in user_conf:
@@ -554,7 +618,7 @@ class EmissionFitting:
                     ineq_operation = '*' # TODO add remaining operations
 
                     # Split number and ref
-                    ineq_expr = param_conf['expr'].replace('<','').replace('>','')
+                    ineq_expr = param_conf['expr'].replace('<', '').replace('>', '')
                     ineq_items = ineq_expr.split(ineq_operation)
                     ineq_linkedParam = ineq_items[0] if not isDigit(ineq_items[0]) else ineq_items[1]
                     ineq_lim = float(ineq_items[0]) if isDigit(ineq_items[0]) else float(ineq_items[1])
@@ -575,18 +639,21 @@ class EmissionFitting:
                     new_expresion = f'{ineq_name}{ineq_operation}{ineq_linkedParam}'
                     param_conf = dict(expr=new_expresion)
 
-            # Special case inquealities
-            elif 'kinematics' in param_conf:
-                ref_line = param_conf['kinematics']
-                gauss_param = param_ref[param_ref.rfind('_') + 1:]
-                assert ref_line in self.linesDF, f'- ERROR kinematics line {ref_line} has not been measured for {param_ref}'
-                param_conf['value'] = self.linesDF.loc[ref_line, gauss_param]
-                param_conf['vary'] = False
-
             # Case default value is not provided
             else:
                 if param_conf['value'] is None:
                     param_conf['value'] = param_value
+
+        # Special case importing kinematics in blended group
+        if self.blended_check and (f'{line_label}_kinem' in user_conf) and (param_label in ('center', 'sigma')):
+            parent_line = user_conf[f'{line_label}_kinem']
+            ion_parent, theoWave_parent, latexLabel_parent = label_decomposition(parent_line, scalar_output=True)
+            ion_child, theoWave_child, latexLabel_child = label_decomposition(line_label, scalar_output=True)
+            parent_param_label = f'{parent_line}_{param_label}'
+            param_conf = {'expr': f'{theoWave_child/theoWave_parent:0.8f}*{parent_param_label}'}
+
+            if param_ref in user_conf:
+                print(f'-- WARNING: {line_label} overwritten by {parent_line} kinematics')
 
         # Special case for the area parameter
         if '_area' in param_ref:
@@ -667,6 +734,7 @@ class LineMesurer(EmissionFitting):
     _redshift, _normFlux = 0, 1
     _wave_units = 'lambda'
 
+    # TODO do not include lines with '_b' in output lines log
     def __init__(self, input_wave=None, input_flux=None, input_err=None, linesDF_address=None, redshift=None,
                  normFlux=None, crop_waves=None, wave_units='lambda'):
 
@@ -696,7 +764,7 @@ class LineMesurer(EmissionFitting):
         self.normFlux = normFlux if normFlux is not None else self._normFlux
         self.flux = self.flux / self.normFlux
         if input_err is not None:
-            self.errFlux = self.errFlux / self._normFlux
+            self.errFlux = self.errFlux / self.normFlux
 
         # Generate empty dataframe to store measurement use cwd as default storing folder
         if linesDF_address is None:
@@ -781,7 +849,7 @@ class LineMesurer(EmissionFitting):
         self.line_properties(idcsLineRegion, idcsContRegion, bootstrap_size=1000)
 
         # Gaussian line fit properties
-        self.line_fit(algorithm, self.lineLabel, idcsLineRegion, idcsContRegion, user_conf=fit_conf)
+        self.line_fit(algorithm, self.lineLabel, idcsLineRegion, idcsContRegion, user_conf=fit_conf, lineDF=self.linesDF)
 
         # Safe the results to the lineslog
         self.results_to_database(self.lineLabel, self.linesDF, fit_conf)
@@ -1024,6 +1092,99 @@ class LineMesurer(EmissionFitting):
         defaultConf = STANDARD_PLOT.copy()
         defaultConf.update(fig_conf)
         rcParams.update(defaultConf)
+
+        if lmfit_output is None:
+            fig, ax = plt.subplots()
+            ax = [ax]
+        else:
+            # fig, ax = plt.subplots(nrows=2)
+            gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
+            ax = [plt.subplot(gs[0]), plt.subplot(gs[1])]
+
+        # Plot line spectrum
+        idcs_plot = (self.lineWaves[0] - 5 <= self.wave) & (self.wave <= self.lineWaves[5] + 5)
+        ax[0].step(self.wave[idcs_plot], self.flux[idcs_plot], label='Line spectrum')
+
+        # Print lmfit results
+        if lmfit_output is not None:
+
+            # Determine line Label:
+            lineLabel = 'None'
+            for comp in lmfit_output.var_names:
+                if '_cont' in comp:
+                    lineLabel = comp[0:comp.find('_cont')]
+                break
+
+            x_in, y_in = lmfit_output.userkws['x'], lmfit_output.data
+
+            wave_resample = np.linspace(x_in[0], x_in[-1], 500)
+            flux_resample = lmfit_output.eval_components(x=wave_resample)
+
+            ax[0].scatter(x_in, y_in, color='tab:red', label='Input data', alpha=0.4)
+            ax[0].plot(x_in, lmfit_output.best_fit, label='LMFIT best fit')
+
+            # Plot individual components
+            contLabel = f'{lineLabel}_cont_'
+            cont_flux = flux_resample.get(contLabel, 0.0)
+            for comp_label, comp_flux in flux_resample.items():
+                comp_flux = comp_flux + cont_flux if comp_label != contLabel else comp_flux
+                ax[0].plot(wave_resample, comp_flux, label=f'{comp_label}', linestyle='--')
+
+            # Plot the residuals:
+            residual = (lmfit_output.best_fit - y_in)/y_in
+            ax[1].step(x_in, residual)
+            # ax[1].plot(x_fit, 1/lmfit_output.weights)
+
+            err_norm = np.sqrt(self.errFlux[idcs_plot])/self.cont
+            ax[1].fill_between(self.wave[idcs_plot], -err_norm, err_norm, facecolor='tab:red', alpha=0.5,
+                               label=r'$\sigma_{Error} / \overline{F(linear)}$')
+
+            y_low, y_high = -self.std_continuum/self.cont, self.std_continuum/self.cont
+            ax[1].fill_between(x_in, y_low, y_high, facecolor='tab:orange', alpha=0.5,
+                               label = r'$\sigma_{Continuum} / \overline{F(linear)}$')
+
+            ax[1].set_xlim(ax[0].get_xlim())
+            ax[1].set_ylim(2*residual.min(), 2*residual.max())
+            ax[1].legend(loc='center left', framealpha=1)
+            ax[1].set_ylabel(r'$\frac{F_{fit}}{F_{obs}} - 1$')
+            ax[1].set_xlabel(r'Wavelength $(\AA)$')
+
+        # Plot selection regions
+        idcsW = np.searchsorted(self.wave, self.lineWaves)
+        ax[0].fill_between(self.wave[idcsW[0]:idcsW[1]], 0, self.flux[idcsW[0]:idcsW[1]], facecolor='tab:orange',
+                        step="pre", alpha=0.2)
+        ax[0].fill_between(self.wave[idcsW[2]:idcsW[3]], 0, self.flux[idcsW[2]:idcsW[3]], facecolor='tab:green',
+                        step="pre", alpha=0.2)
+        ax[0].fill_between(self.wave[idcsW[4]:idcsW[5]], 0, self.flux[idcsW[4]:idcsW[5]], facecolor='tab:orange',
+                        step="pre", alpha=0.2)
+
+        defaultConf = STANDARD_AXES.copy()
+        defaultConf.update(ax_conf)
+
+        if self.normFlux != 1.0:
+            defaultConf['ylabel'] = defaultConf['ylabel'] + " $\\times{{{0:.2g}}}$".format(self.normFlux)
+
+        ax[0].update(defaultConf)
+        ax[0].legend()
+
+        if logScale:
+            ax[0].set_yscale('log')
+
+        if output_address is None:
+            plt.tight_layout()
+            plt.show()
+        else:
+            plt.savefig(output_address, bbox_inches='tight')
+            plt.close(fig)
+
+        return
+
+    def plot_fit_components_backUp(self, lmfit_output=None, fig_conf={}, ax_conf={}, output_address=None, logScale=False):
+
+        # Plot Configuration
+        defaultConf = STANDARD_PLOT.copy()
+        defaultConf.update(fig_conf)
+        rcParams.update(defaultConf)
         fig, ax = plt.subplots()
 
         # Plot line spectrum
@@ -1032,6 +1193,13 @@ class LineMesurer(EmissionFitting):
 
         # Print lmfit results
         if lmfit_output is not None:
+
+            # Determine line Label:
+            lineLabel = 'None'
+            for comp in lmfit_output.var_names:
+                if '_cont' in comp:
+                    lineLabel = comp[0:comp.find('_cont')]
+                break
 
             x_fit, y_fit = lmfit_output.userkws['x'], lmfit_output.data
 
@@ -1042,20 +1210,20 @@ class LineMesurer(EmissionFitting):
             ax.plot(x_fit, lmfit_output.best_fit, label='LMFIT best fit')
 
             # Plot individual components
+            contLabel = f'{lineLabel}_cont_'
+            cont_flux = flux_resample.get(contLabel, 0.0)
             for comp_label, comp_flux in flux_resample.items():
+                comp_flux = comp_flux + cont_flux if comp_label != contLabel else comp_flux
                 ax.plot(wave_resample, comp_flux, label=f'{comp_label}', linestyle='--')
-        # else:
+
         # Plot selection regions
         idcsW = np.searchsorted(self.wave, self.lineWaves)
         ax.fill_between(self.wave[idcsW[0]:idcsW[1]], 0, self.flux[idcsW[0]:idcsW[1]], facecolor='tab:orange',
-                        step="pre",
-                        alpha=0.2)
+                        step="pre", alpha=0.2)
         ax.fill_between(self.wave[idcsW[2]:idcsW[3]], 0, self.flux[idcsW[2]:idcsW[3]], facecolor='tab:green',
-                        step="pre",
-                        alpha=0.2)
+                        step="pre", alpha=0.2)
         ax.fill_between(self.wave[idcsW[4]:idcsW[5]], 0, self.flux[idcsW[4]:idcsW[5]], facecolor='tab:orange',
-                        step="pre",
-                        alpha=0.2)
+                        step="pre", alpha=0.2)
 
         defaultConf = STANDARD_AXES.copy()
         defaultConf.update(ax_conf)
@@ -1386,7 +1554,7 @@ class LineMesurer(EmissionFitting):
 
         # Measure line fluxes
         pdf = PdfPrinter()
-        pdf.create_pdfDoc(tex_address, pdf_type='table')
+        pdf.create_pdfDoc(pdf_type='table')
         pdf.pdf_insert_table(FLUX_TEX_TABLE_HEADERS)
 
         # Dataframe as container as a txt file
@@ -1454,7 +1622,82 @@ class LineMesurer(EmissionFitting):
 
         # Save the pdf table
         try:
-            pdf.generate_pdf(clean_tex=True)
+            pdf.generate_pdf(table_address, clean_tex=True)
+        except:
+            print('-- PDF compilation failure')
+
+        # Save the txt table
+        with open(txt_address, 'wb') as output_file:
+            string_DF = tableDF.to_string()
+            string_DF = string_DF.replace('$', '')
+            output_file.write(string_DF.encode('UTF-8'))
+
+        return
+
+    def table_kinematics(self, lines_df, table_address, flux_normalization=1.0):
+
+        # TODO this could be included in sr.print
+        tex_address = f'{table_address}'
+        txt_address = f'{table_address}.txt'
+
+        # Measure line fluxes
+        pdf = PdfPrinter()
+        pdf.create_pdfDoc(pdf_type='table')
+        pdf.pdf_insert_table(KIN_TEX_TABLE_HEADERS)
+
+        # Dataframe as container as a txt file
+        tableDF = pd.DataFrame(columns=KIN_TXT_TABLE_HEADERS[1:])
+
+        obsLines = lines_df.index.values
+        for lineLabel in obsLines:
+
+            if not lineLabel.endswith('_b'):
+                label_entry = lines_df.loc[lineLabel, 'latexLabel']
+
+                # Establish component:
+                blended_check = (lines_df.loc[lineLabel, 'blended'] != 'None') and ('_m' not in lineLabel)
+                if blended_check:
+                    blended_group = lines_df.loc[lineLabel, 'blended']
+                    comp = 'n1' if lineLabel.count('_') == 1 else lineLabel[lineLabel.rfind('_')+1:]
+                else:
+                    comp = 'n1'
+                comp_label, lineEmisLabel = kinematic_component_labelling(label_entry, comp)
+
+                wavelength = lines_df.loc[lineLabel, 'wavelength']
+                v_r, v_r_err =  lines_df.loc[lineLabel, 'v_r':'v_r_err']
+                sigma_vel, sigma_err_vel = lines_df.loc[lineLabel, 'sigma_vel':'sigma_err_vel']
+
+                flux_intg = lines_df.loc[lineLabel, 'intg_flux']
+                flux_intgErr = lines_df.loc[lineLabel, 'intg_err']
+                flux_gauss = lines_df.loc[lineLabel, 'gauss_flux']
+                flux_gaussErr = lines_df.loc[lineLabel, 'gauss_err']
+
+                # Format the entries
+                vr_entry = r'${:0.1f}\,\pm\,{:0.1f}$'.format(v_r, v_r_err)
+                sigma_entry = r'${:0.1f}\,\pm\,{:0.1f}$'.format(sigma_vel, sigma_err_vel)
+
+                if blended_check:
+                    flux, fluxErr = flux_gauss, flux_gaussErr
+                    label_entry = lineEmisLabel
+                else:
+                    flux, fluxErr = flux_intg, flux_intgErr
+
+                # Correct the flux
+                flux_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(flux, fluxErr)
+
+                # Add row of data
+                tex_row_i = [label_entry, comp_label, vr_entry, sigma_entry, flux_entry]
+                txt_row_i = [lineLabel, comp_label.replace(' ', '_'), v_r, v_r_err, sigma_vel, sigma_err_vel, flux, fluxErr]
+
+                lastRow_check = True if lineLabel == obsLines[-1] else False
+                pdf.addTableRow(tex_row_i, last_row=lastRow_check)
+                tableDF.loc[lineLabel] = txt_row_i[1:]
+
+        pdf.table.add_hline()
+
+        # Save the pdf table
+        try:
+            pdf.generate_pdf(tex_address)
         except:
             print('-- PDF compilation failure')
 
@@ -1646,8 +1889,8 @@ if __name__ == '__main__':
     ax.scatter(lm.wave[idcsRedCont], lm.flux[idcsRedCont], label='Red continuum')
 
     # Plot individual components
-    for comp_label, comp_flux in flux_resample.items():
-        ax.plot(wave_resample, comp_flux, label=f'Component {comp_label}', linestyle='--')
+    for curve_label, curve_flux in flux_resample.items():
+        ax.plot(wave_resample, curve_flux, label=f'Component {curve_label}', linestyle='--')
 
     # ax.scatter(continuaWave, continuaFlux, label='Continuum regions')
     # ax.plot(lineWave, lineContinuumFit, label='Observed line', linestyle=':')
