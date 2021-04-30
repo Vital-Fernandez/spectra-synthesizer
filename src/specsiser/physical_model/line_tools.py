@@ -75,6 +75,8 @@ KIN_TXT_TABLE_HEADERS = [r'$Transition$', r'$Comp$', 'v_r', 'v_r_error', 'sigma_
 
 SQRT2PI = np.sqrt(2*np.pi)
 
+KIN_LABEL_CONVERSION = {'center': 'mu', 'sigma': 'sigma'}
+
 
 def gauss_area(sigma_true, amp_true):
     # return np.sqrt(2 * np.pi * sigma_true ** 2) * amp_true
@@ -304,16 +306,16 @@ def import_kinematics_from_line(line_label, user_conf, line_df):
             sigma_parent = line_df.loc[kinemLine, 'sigma_vel':'sigma_err_vel'].values
             wave_parent = line_df.loc[kinemLine, 'wavelength']
 
-            ion, waveLine, latexLabelLine = label_decomposition(line_label, scalar_output=True)
+            ion, wave_child, latexLabelLine = label_decomposition(line_label, scalar_output=True)
 
             # Convert parent velocity units to child angstrom units
             for param_ext in ('center', 'sigma'):
                 param_label = f'{line_label}_{param_ext}'
                 if param_label in user_conf: print(f'-- WARNING: {param_label} overwritten by {kinemLine} kinematics')
                 if param_ext == 'center':
-                    param_value = waveLine * (1 + vr_parent / c_KMpS)
+                    param_value = wave_child * (1 + vr_parent / c_KMpS)
                 else:
-                    param_value = waveLine * (sigma_parent / c_KMpS)
+                    param_value = wave_child * (sigma_parent / c_KMpS)
                 user_conf[param_label] = {'value': param_value[0], 'vary': False}
                 user_conf[f'{param_label}_err'] = {'value': param_value[1], 'vary': False}
 
@@ -499,11 +501,11 @@ class EmissionFitting:
             self.gauss_mcfit(idcs_line, idcs_continua, iter_n)
 
         if algorithm == 'lmfit':
-            self.gauss_lmfit(lineRef, x_array, y_array, weights_array, user_conf)
+            self.gauss_lmfit(lineRef, x_array, y_array, weights_array, user_conf, lineDF)
 
         return
 
-    def gauss_lmfit(self, line_label, x, y, weights, user_conf={}):
+    def gauss_lmfit(self, line_label, x, y, weights, user_conf={}, lines_df=[]):
 
         """
         :param line_label:
@@ -528,6 +530,20 @@ class EmissionFitting:
         # For blended lines replace the first line reference waves by the peak one
         if self.blended_check:
             ref_wave = theoWave_arr
+
+        # # Import data from previous lines
+        # if f'{line_label}_kinem' in user_conf:
+        #     parent_line = user_conf[f'{line_label}_kinem']
+        #     if parent_line in lines_df.index:
+        #         ion_parent, wave_parent, latexLabel_parent = label_decomposition(parent_line, scalar_output=True)
+        #         for param_ext in ('center', 'sigma'):
+        #             param_label = f'{line_label}_{param_ext}'
+        #             parent_value = lines_df.loc[parent_line, KIN_LABEL_CONVERSION[param_ext]]
+        #             if param_label in user_conf:
+        #                 print(f'-- WARNING: {param_label} overwritten by {parent_line} kinematics')
+        #             user_conf[param_label] = {'value': theoWave_arr/wave_parent * parent_value, 'vary': False}
+        #     else:
+        #         print(f'-- WARNING: {parent_line} has not been measured. Its kinematics were not copied to {line_label}')
 
         # Define fitting params for each component
         fit_model = Model(linear_model)
@@ -580,11 +596,15 @@ class EmissionFitting:
                 eqw_g[i], eqwErr_g[i] = self.lineGaussFlux[i]/self.cont, self.lineGaussErr[i]/self.cont
 
             # Kinematics
-            print(f'Operation {line} Vr: fit {self.p1[1, i]}, theo {theoWave_arr[i]}')
             self.v_r[i] = wavelength_to_vel(self.p1[1, i] - theoWave_arr[i], theoWave_arr[i])
             self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], theoWave_arr[i]))
             self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], theoWave_arr[i])
             self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], theoWave_arr[i])
+
+            if (not self.blended_check) and (f'{line_label}_kinem' in user_conf):
+                parent_line = user_conf[f'{line_label}_kinem']
+                v_r_err, sigma_vel_err = lines_df.loc[parent_line, 'v_r_err'], lines_df.loc[parent_line, 'sigma_err_vel']
+                self.v_r_Err[i], self.sigma_vel_Err[i] = v_r_err, sigma_vel_err
 
         if self.blended_check:
             self.eqw, self.eqwErr = eqw_g, eqwErr_g
@@ -1546,7 +1566,7 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def table_fluxes(self, lines_df, table_address, pyneb_rc, scaleTable=1000):
+    def table_fluxes(self, lines_df, table_address, pyneb_rc=None, scaleTable=1000):
 
         # TODO this could be included in sr.print
         tex_address = f'{table_address}'
@@ -1585,12 +1605,16 @@ class LineMesurer(EmissionFitting):
                 flux, fluxErr = flux_intg, flux_intgErr
 
             # Correct the flux
-            corr = pyneb_rc.getCorrHb(wavelength)
-            intensity, intensityErr = flux * corr, fluxErr * corr
+            if pyneb_rc is not None:
+                corr = pyneb_rc.getCorrHb(wavelength)
+                intensity, intensityErr = flux * corr, fluxErr * corr
+                intensity_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(intensity, intensityErr)
+            else:
+                intensity, intensityErr = '-', '-'
+                intensity_entry = '-'
 
             eqw_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(eqw, eqwErr)
             flux_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(flux, fluxErr)
-            intensity_entry = r'${:0.2f}\,\pm\,{:0.2f}$'.format(intensity, intensityErr)
 
             # Add row of data
             tex_row_i = [label_entry, eqw_entry, flux_entry, intensity_entry]
@@ -1600,16 +1624,29 @@ class LineMesurer(EmissionFitting):
             pdf.addTableRow(tex_row_i, last_row=lastRow_check)
             tableDF.loc[lineLabel] = txt_row_i[1:]
 
-        # Data last rows
-        row_Hbetaflux = [r'$H\beta$ $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
-                         '',
-                         flux_Hbeta,
-                         flux_Hbeta * pyneb_rc.getCorr(4861)]
+        if pyneb_rc is not None:
 
-        row_cHbeta = [r'$c(H\beta)$',
-                      '',
-                      float(pyneb_rc.cHbeta),
-                      '']
+            # Data last rows
+            row_Hbetaflux = [r'$H\beta$ $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
+                             '',
+                             flux_Hbeta,
+                             flux_Hbeta * pyneb_rc.getCorr(4861)]
+
+            row_cHbeta = [r'$c(H\beta)$',
+                          '',
+                          float(pyneb_rc.cHbeta),
+                          '']
+        else:
+            # Data last rows
+            row_Hbetaflux = [r'$H\beta$ $(erg\,cm^{-2} s^{-1} \AA^{-1})$',
+                             '',
+                             flux_Hbeta,
+                             '-']
+
+            row_cHbeta = [r'$c(H\beta)$',
+                          '',
+                          '-',
+                          '']
 
         pdf.addTableRow(row_Hbetaflux, last_row=False)
         pdf.addTableRow(row_cHbeta, last_row=False)
