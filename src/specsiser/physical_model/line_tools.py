@@ -184,7 +184,7 @@ def generate_object_mask(lines_DF, wavelength, line_labels):
 def compute_lineWidth(idx_peak, spec_flux, delta_i, min_delta=2):
     """
 
-    Algororithm to measure emision line width given its peak location
+    Algorithm to measure emision line width given its peak location
 
     :param idx_peak:
     :param spec_flux:
@@ -194,8 +194,19 @@ def compute_lineWidth(idx_peak, spec_flux, delta_i, min_delta=2):
     """
 
     i = idx_peak
-    while (spec_flux[i] > spec_flux[i + delta_i]) or (np.abs(idx_peak - (i + delta_i)) <= min_delta):
-        i += delta_i
+
+    limit_blue = (i + delta_i) > 0
+    limit_red = (i + delta_i) < spec_flux.size
+
+    if limit_blue or limit_red:
+        while (spec_flux[i] > spec_flux[i + delta_i]) or (np.abs(idx_peak - (i + delta_i)) <= min_delta):
+            i += delta_i
+
+            limit_blue = (i + delta_i) > 0
+            limit_red = (i + delta_i) < spec_flux.size
+
+            if limit_blue or limit_red:
+                break
 
     return i
 
@@ -386,6 +397,7 @@ class EmissionFitting:
         idcsLineRegion = ((self.wave[idcsW[:, 2]] <= self.wave[:, None]) & (self.wave[:, None] <= self.wave[idcsW[:, 3]])).squeeze()
 
         # Return left and right continua merged in one array
+        # TODO add check for wavelengths beyond wavelengh limits
         if merge_continua:
             idcsContRegion = (((self.wave[idcsW[:, 0]] <= self.wave[:, None]) &
                               (self.wave[:, None] <= self.wave[idcsW[:, 1]])) |
@@ -489,6 +501,7 @@ class EmissionFitting:
 
         # Define fiting weights according to the error # TODO better to give an option introduce the error you want
         if self.errFlux is None:
+            self.errFlux = np.full(self.flux.size, fill_value=self.std_continuum)
             weights_array = np.full(idcsFit.sum(), fill_value=1.0/self.std_continuum)
         else:
             weights_array = 1.0/np.sqrt(np.abs(self.errFlux[idcsFit]))
@@ -877,7 +890,8 @@ class LineMesurer(EmissionFitting):
         return
 
     def match_lines(self, obsLineTable, theoLineDF, lineType='emission', tol=5, blendedLineList=[], detect_check=False,
-                    find_line_borders=True):
+                    find_line_borders='Auto'):
+        #TODO maybe we should remove not detected from output
 
         # Query the lines from the astropy finder tables # TODO Expand technique for absorption lines
         idcsLineType = obsLineTable['line_type'] == lineType
@@ -911,12 +925,21 @@ class LineMesurer(EmissionFitting):
                 theoLineDF.loc[row_index, 'observation'] = 'detected'
                 theoLineLabel = row_index[0]
 
-                if find_line_borders:
+                # TODO lines like Halpha+[NII] this does not work, we should add exclusion
+                if find_line_borders == True:
                     minSeparation = 4 if theoLineLabel in blendedLineList else 2
                     idx_min = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=-1, min_delta=minSeparation)
                     idx_max = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=1, min_delta=minSeparation)
                     theoLineDF.loc[row_index, 'w3'] = self.wave[idx_min]
                     theoLineDF.loc[row_index, 'w4'] = self.wave[idx_max]
+                else:
+                    if find_line_borders == 'Auto':
+                        if '_b' not in theoLineLabel:
+                            minSeparation = 4 if theoLineLabel in blendedLineList else 2
+                            idx_min = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=-1, min_delta=minSeparation)
+                            idx_max = compute_lineWidth(idcsLinePeak[i], self.flux, delta_i=1, min_delta=minSeparation)
+                            theoLineDF.loc[row_index, 'w3'] = self.wave[idx_min]
+                            theoLineDF.loc[row_index, 'w4'] = self.wave[idx_max]
 
         # Sort by wavelength
         theoLineDF.sort_values('wavelength', inplace=True)
@@ -1054,7 +1077,7 @@ class LineMesurer(EmissionFitting):
 
         # Plot the continuum if available
         if continuumFlux is not None:
-            ax.step(self.wave, continuumFlux, label='Error Continuum')
+            ax.step(self.wave, continuumFlux, label='Error Continuum', linestyle=':')
 
         # Plot astropy detected lines if available
         if obsLinesTable is not None:
@@ -1151,7 +1174,7 @@ class LineMesurer(EmissionFitting):
                 ax[0].plot(wave_resample, comp_flux, label=f'{comp_label}', linestyle='--')
 
             # Plot the residuals:
-            residual = (lmfit_output.best_fit - y_in)/y_in
+            residual = (y_in - lmfit_output.best_fit)/lmfit_output.best_fit
             ax[1].step(x_in, residual)
             # ax[1].plot(x_fit, 1/lmfit_output.weights)
 
@@ -1166,7 +1189,7 @@ class LineMesurer(EmissionFitting):
             ax[1].set_xlim(ax[0].get_xlim())
             ax[1].set_ylim(2*residual.min(), 2*residual.max())
             ax[1].legend(loc='center left', framealpha=1)
-            ax[1].set_ylabel(r'$\frac{F_{fit}}{F_{obs}} - 1$')
+            ax[1].set_ylabel(r'$\frac{F_{obs}}{F_{fit}} - 1$')
             ax[1].set_xlabel(r'Wavelength $(\AA)$')
 
         # Plot selection regions
@@ -1195,7 +1218,6 @@ class LineMesurer(EmissionFitting):
             plt.show()
         else:
             plt.savefig(output_address, bbox_inches='tight')
-            plt.close(fig)
 
         return
 
