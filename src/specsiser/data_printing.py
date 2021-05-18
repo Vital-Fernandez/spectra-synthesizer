@@ -7,7 +7,7 @@ from matplotlib import cm
 from matplotlib import rcParams
 from matplotlib import colors
 from matplotlib.mlab import detrend_mean
-from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Section, Tabu, Table, LongTable, MultiColumn, MultiRow, utils
+from pylatex import Document, Figure, NewPage, NoEscape, Package, Tabular, Tabularx, Section, Tabu, Table, LongTable, MultiColumn, MultiRow, utils
 from functools import partial
 from collections import Sequence
 from scipy import stats as st
@@ -49,6 +49,7 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'S4': r'$\frac{S^{3+}}{H^{+}}$',
              'O2': r'$\frac{O^{+}}{H^{+}}$',
              'O3': r'$\frac{O^{2+}}{H^{+}}$',
+             'Ni3': r'$\frac{Ni^{2+}}{H^{+}}$',
              'Cl3': r'$\frac{Cl^{2+}}{H^{+}}$',
              'Ne3': r'$\frac{Ne^{2+}}{H^{+}}$',
              'Fe3': r'$\frac{Fe^{2+}}{H^{+}}$',
@@ -488,6 +489,8 @@ class PdfPrinter():
                 self.pdfDoc.packages.append(Package('siunitx'))
                 self.pdfDoc.packages.append(Package('makecell'))
                 self.pdfDoc.packages.append(Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+                self.pdfDoc.packages.append(Package('colortbl', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+                self.pdfDoc.packages.append(Package('xcolor', options=['table']))
 
             elif pdf_type == 'longtable':
                 self.pdfDoc.append(NoEscape(r'\pagenumbering{gobble}'))
@@ -514,7 +517,7 @@ class PdfPrinter():
 
         return
 
-    def pdf_insert_table(self, column_headers=None, table_format=None, addfinalLine=True):
+    def pdf_insert_table(self, column_headers=None, table_format=None, addfinalLine=True, color_font=None, color_background=None):
 
         # Set the table format
         if table_format is None:
@@ -527,11 +530,20 @@ class PdfPrinter():
                 self.pdfDoc.append(NoEscape(r'\begin{preview}'))
 
                 # Initiate the table
-                with self.pdfDoc.create(Tabu(table_format)) as self.table:
+                with self.pdfDoc.create(Tabular(table_format)) as self.table:
                     if column_headers != None:
                         self.table.add_hline()
                         # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
                         output_row = list(map(partial(format_for_table), column_headers))
+
+                        if color_font is not None:
+                            for i, item in enumerate(output_row):
+                                output_row[i] = NoEscape(r'\color{{{}}}{}'.format(color_font, item))
+
+                        if color_background is not None:
+                            for i, item in enumerate(output_row):
+                                output_row[i] = NoEscape(r'\cellcolor{{{}}}{}'.format(color_background, item))
+
                         self.table.add_row(output_row, escape=False, strict=False)
                         if addfinalLine:
                             self.table.add_hline()
@@ -595,11 +607,20 @@ class PdfPrinter():
                 self.table.add_row(list(map(str, column_headers)), escape=False)
                 self.table.add_hline()
 
-    def addTableRow(self, input_row, row_format='auto', rounddig=4, rounddig_er=None, last_row=False):
+    def addTableRow(self, input_row, row_format='auto', rounddig=4, rounddig_er=None, last_row=False, color_font=None,
+                    color_background=None):
 
         # Default formatting
         if row_format == 'auto':
             output_row = list(map(partial(format_for_table, rounddig=rounddig), input_row))
+
+        if color_font is not None:
+            for i, item in enumerate(output_row):
+                output_row[i] = NoEscape(r'\color{{{}}}{}'.format(color_font, item))
+
+        if color_background is not None:
+            for i, item in enumerate(output_row):
+                output_row[i] = NoEscape(r'\cellcolor{{{}}}{}'.format(color_background, item))
 
         # Append the row
         self.table.add_row(output_row, escape=False, strict=False)
