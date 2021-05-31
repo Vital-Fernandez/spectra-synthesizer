@@ -563,6 +563,7 @@ def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=
     :rtype: pd.DataFrame
     """
 
+    # TODO include the gaussian/integr distinction
     # Output DF # TODO we need to replace for a open excel format
     if linesDF is None:
         try:

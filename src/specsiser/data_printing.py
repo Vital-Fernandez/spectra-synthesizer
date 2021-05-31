@@ -33,6 +33,8 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'He2r': r'$y^{2+}$',
              'He1': r'$y^{+}$',
              'He2': r'$y^{2+}$',
+             'log(He1r)': r'$log(y^{+})$',
+             'log(He2r)': r'$log(y^{2+})$',
              'OH': r'$\frac{O}{H}$',
              'OH_err': r'$O/H\,err$',
              'S3_abund': r'$S^{2+}$',
@@ -80,7 +82,9 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'x': r'x interpolator$',
              'ICF_SIV': r'$ICF\left(S^{3+}\right)$',
              'logU': r'$log(U)$',
-             'Teff': r'$T_{eff}$'}
+             'Teff': r'$T_{eff}$',
+             'X_i+': r'$X^{i+}$',
+             'log(X_i+)': r'$12+log\left(X^{i+}\right)$'}
 
 VAL_LIST = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
 SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]

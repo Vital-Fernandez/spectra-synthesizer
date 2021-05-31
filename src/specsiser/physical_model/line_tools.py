@@ -183,6 +183,22 @@ def generate_object_mask(lines_DF, wavelength, line_labels):
 
 def compute_lineWidth(idx_peak, spec_flux, delta_i, min_delta=2):
     """
+    Algororithm to measure emision line width given its peak location
+    :param idx_peak:
+    :param spec_flux:
+    :param delta_i:
+    :param min_delta:
+    :return:
+    """
+
+    i = idx_peak
+    while (spec_flux[i] > spec_flux[i + delta_i]) or (np.abs(idx_peak - (i + delta_i)) <= min_delta):
+        i += delta_i
+
+    return i
+
+def compute_lineWidth_peligroso(idx_peak, spec_flux, delta_i, min_delta=2):
+    """
 
     Algorithm to measure emision line width given its peak location
 
@@ -209,7 +225,6 @@ def compute_lineWidth(idx_peak, spec_flux, delta_i, min_delta=2):
                 break
 
     return i
-
 
 def int_to_roman(num):
     i, roman_num = 0, ''
@@ -473,6 +488,8 @@ class EmissionFitting:
         self.cont = self.peakWave * self.m_continuum + self.n_continuum
         self.snr_line, self.snr_cont = iraf_snr(emisFlux), iraf_snr(contFlux)
 
+        # print(f'{self.lineLabel}: {self.peakWave:0.2f}, {self.pixelWidth:0.2f}, {300000*self.pixelWidth/self.peakWave:0.2f}')
+
         # Monte Carlo to measure line flux and uncertainty
         normalNoise = np.random.normal(0.0, self.std_continuum, (bootstrap_size, emisWave.size))
         lineFluxMatrix = emisFlux + normalNoise
@@ -579,6 +596,9 @@ class EmissionFitting:
         self.fit_params = fit_model.make_params()
         self.fit_output = fit_model.fit(y, self.fit_params, x=x, weights=weights)
 
+        if not self.fit_output.errorbars:
+            print(f'-- WARNING: Line measuring error at {line_label}')
+
         # Generate containers for the results
         eqw_g, eqwErr_g = np.empty(n_comps), np.empty(n_comps)
         self.p1, self.p1_Err = np.empty((3, n_comps)), np.empty((3, n_comps))
@@ -613,11 +633,14 @@ class EmissionFitting:
             self.v_r_Err[i] = np.abs(wavelength_to_vel(self.p1_Err[1, i], theoWave_arr[i]))
             self.sigma_vel[i] = wavelength_to_vel(self.p1[2, i], theoWave_arr[i])
             self.sigma_vel_Err[i] = wavelength_to_vel(self.p1_Err[2, i], theoWave_arr[i])
+            # if 'H1' in line:
+            #     print(f'-- {line}, mu: {self.p1[1, i]}+/-{self.p1_Err[1, i]}, vr: {self.v_r[i]} +/- {self.v_r_Err[i] }')
+            #     print(f'-- {line}, sigma_ang: {self.p1[2, i]}, sigma_kms: {self.sigma_vel[i]} +/- {self.sigma_vel_Err[i]}')
 
-            if (not self.blended_check) and (f'{line_label}_kinem' in user_conf):
-                parent_line = user_conf[f'{line_label}_kinem']
-                v_r_err, sigma_vel_err = lines_df.loc[parent_line, 'v_r_err'], lines_df.loc[parent_line, 'sigma_err_vel']
-                self.v_r_Err[i], self.sigma_vel_Err[i] = v_r_err, sigma_vel_err
+            # if (not self.blended_check) and (f'{line_label}_kinem' in user_conf):
+            #     parent_line = user_conf[f'{line_label}_kinem']
+            #     v_r_err, sigma_vel_err = lines_df.loc[parent_line, 'v_r_err'], lines_df.loc[parent_line, 'sigma_err_vel']
+            #     self.v_r_Err[i], self.sigma_vel_Err[i] = v_r_err, sigma_vel_err
 
         if self.blended_check:
             self.eqw, self.eqwErr = eqw_g, eqwErr_g
