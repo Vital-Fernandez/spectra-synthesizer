@@ -243,10 +243,8 @@ def loadConfData(filepath, objList_check=False, group_variables=False):
 
     else:
 
-        # Loop through configuration file sections and merge into a dictionary
         confDict = {}
 
-        # Loop through configuration file sections and merge into a dictionary
         for section in cfg.sections():
             confDict[section] = {}
             for option_key in cfg.options(section):

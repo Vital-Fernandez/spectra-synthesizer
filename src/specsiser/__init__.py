@@ -29,7 +29,8 @@ from .physical_model.chemical_model import DirectMethod, TOIII_from_TSIII_relati
 from .physical_model.gasEmission_functions import EmissionTensors, assignFluxEq2Label,\
     gridInterpolatorFunction, EmissionFluxModel
 from inference_model import SpectraSynthesizer
-from .physical_model.line_tools import EmissionFitting, LineMesurer, label_decomposition, lineslogFile_to_DF, redshift_calculation, save_lineslog
+from .tools.line_measure import LineMesurer, lineslogFile_to_DF, save_lineslog
+from data_printing import label_decomposition
 from .data.spectra_files import import_fits_data
 from .print import plot
 from .physical_model.photo_ionization_model import load_ionization_grid
