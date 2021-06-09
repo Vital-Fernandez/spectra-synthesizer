@@ -108,8 +108,8 @@ class EmissionFitting:
     _MU_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=True, expr=None)
     _SIG_PAR = dict(value=None, min=0, max=np.inf, vary=True, expr=None)
     _AREA_PAR = dict(value=None, min=0, max=np.inf, vary=True, expr=None)
-    _SLOPE_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=True, expr=None)
-    _INTER_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=True, expr=None)
+    _SLOPE_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=False, expr=None)
+    _INTER_PAR = dict(value=None, min=-np.inf, max=np.inf, vary=False, expr=None)
 
     def __init__(self):
 
@@ -137,7 +137,7 @@ class EmissionFitting:
         masks_array = np.array(masks_array, ndmin=2)
 
         # Find indeces for six points in spectrum
-        idcsW = np.searchsorted(self.wave, masks_array)
+        idcsW = np.searchsorted(wave_arr, masks_array)
 
         # Emission region
         idcsLineRegion = ((wave_arr[idcsW[:, 2]] <= wave_arr[:, None]) &
@@ -220,6 +220,7 @@ class EmissionFitting:
         self.snr_line, self.snr_cont = iraf_snr(emisFlux), iraf_snr(contFlux)
 
         # Monte Carlo to measure line flux and uncertainty
+        # TODO this matrix should use the pixel error if available
         normalNoise = np.random.normal(0.0, self.std_continuum, (bootstrap_size, emisWave.size))
         lineFluxMatrix = emisFlux + normalNoise
         areasArray = (lineFluxMatrix.sum(axis=1) - lineLinearCont.sum()) * self.pixelWidth
@@ -288,12 +289,11 @@ class EmissionFitting:
         n_comps = self.mixtureComponents.size
         ion_arr, theoWave_arr, latexLabel_arr = label_decomposition(self.mixtureComponents, combined_dict=user_conf)
 
-        # Define initial wavelength for group
-        ref_wave = np.array([self.peakWave], ndmin=1)
-
         # For blended lines replace the first line reference waves by the peak one
         if self.blended_check:
             ref_wave = theoWave_arr
+        else:
+            ref_wave = np.array([self.peakWave], ndmin=1)
 
         # # Import data from previous lines
         # if f'{line_label}_kinem' in user_conf:

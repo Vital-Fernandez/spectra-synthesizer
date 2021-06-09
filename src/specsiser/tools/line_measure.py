@@ -217,10 +217,11 @@ class LineMesurer(EmissionFitting):
                 self.errFlux = input_err * (1 + self.redshift)
 
         # Normalize the spectrum
-        self.normFlux = normFlux if normFlux is not None else self._normFlux
-        self.flux = self.flux / self.normFlux
-        if input_err is not None:
-            self.errFlux = self.errFlux / self.normFlux
+        if input_flux is not None:
+            self.normFlux = normFlux if normFlux is not None else self._normFlux
+            self.flux = self.flux / self.normFlux
+            if input_err is not None:
+                self.errFlux = self.errFlux / self.normFlux
 
         # Generate empty dataframe to store measurement use cwd as default storing folder
         self.linesLogAddress = linesDF_address
@@ -302,12 +303,12 @@ class LineMesurer(EmissionFitting):
         # Integrated line properties
         emisWave, emisFlux = self.wave[idcsEmis], self.flux[idcsEmis]
         contWave, contFlux = self.wave[idcsCont], self.flux[idcsCont]
-        self.line_properties(emisWave, emisFlux, contWave, contFlux, bootstrap_size=1000)
+        self.line_properties(emisWave, emisFlux, contWave, contFlux, bootstrap_size=5000)
 
         # Gaussian fitting
         idcsLine = idcsEmis + idcsCont
         x_array, y_array = self.wave[idcsLine], self.flux[idcsLine]
-        w_array = self.errFlux[idcsLine] if self.errFlux is not None else np.full(x_array.size, 1.0/self.std_continuum)
+        w_array = 1.0/self.errFlux[idcsLine] if self.errFlux is not None else np.full(x_array.size, 1.0/self.std_continuum)
         self.gauss_lmfit(self.lineLabel, x_array, y_array, w_array, fit_conf, self.linesDF)
 
         # self.line_fit(algorithm, self.lineLabel, idcsLineRegion, idcsContRegion, user_conf=fit_conf, lineDF=self.linesDF)
@@ -574,7 +575,7 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def plot_fit_components(self, lmfit_output=None, fig_conf={}, ax_conf={}, output_address=None, logScale=False):
+    # def plot_fit_components(self, lmfit_output=None, fig_conf={}, ax_conf={}, output_address=None, logScale=False):
 
         # Plot Configuration
         defaultConf = STANDARD_PLOT.copy()
@@ -623,13 +624,10 @@ class LineMesurer(EmissionFitting):
             ax[1].step(x_in, residual)
             # ax[1].plot(x_fit, 1/lmfit_output.weights)
 
-            if self.errFlux is None:
-                err_norm = np.full(self.wave[idcs_plot].size, 1.0/self.std_continuum)/self.cont
-            else:
+            if self.errFlux is not None:
                 err_norm = np.sqrt(self.errFlux[idcs_plot])/self.cont
-
-            ax[1].fill_between(self.wave[idcs_plot], -err_norm, err_norm, facecolor='tab:red', alpha=0.5,
-                               label=r'$\sigma_{Error} / \overline{F(linear)}$')
+                ax[1].fill_between(self.wave[idcs_plot], -err_norm, err_norm, facecolor='tab:red', alpha=0.5,
+                                   label=r'$\sigma_{Error} / \overline{F(linear)}$')
 
             y_low, y_high = -self.std_continuum/self.cont, self.std_continuum/self.cont
             ax[1].fill_between(x_in, y_low, y_high, facecolor='tab:orange', alpha=0.5,
@@ -667,73 +665,6 @@ class LineMesurer(EmissionFitting):
             plt.show()
         else:
             plt.savefig(output_address, bbox_inches='tight')
-
-        return
-
-    def plot_fit_components_backUp(self, lmfit_output=None, fig_conf={}, ax_conf={}, output_address=None, logScale=False):
-
-        # Plot Configuration
-        defaultConf = STANDARD_PLOT.copy()
-        defaultConf.update(fig_conf)
-        rcParams.update(defaultConf)
-        fig, ax = plt.subplots()
-
-        # Plot line spectrum
-        idcs_plot = (self.lineWaves[0] - 5 <= self.wave) & (self.wave <= self.lineWaves[5] + 5)
-        ax.step(self.wave[idcs_plot], self.flux[idcs_plot], label='Line spectrum')
-
-        # Print lmfit results
-        if lmfit_output is not None:
-
-            # Determine line Label:
-            lineLabel = 'None'
-            for comp in lmfit_output.var_names:
-                if '_cont' in comp:
-                    lineLabel = comp[0:comp.find('_cont')]
-                break
-
-            x_fit, y_fit = lmfit_output.userkws['x'], lmfit_output.data
-
-            wave_resample = np.linspace(x_fit[0], x_fit[-1], 500)
-            flux_resample = lmfit_output.eval_components(x=wave_resample)
-
-            ax.scatter(x_fit, y_fit, color='tab:red', label='Input data', alpha=0.4)
-            ax.plot(x_fit, lmfit_output.best_fit, label='LMFIT best fit')
-
-            # Plot individual components
-            contLabel = f'{lineLabel}_cont_'
-            cont_flux = flux_resample.get(contLabel, 0.0)
-            for comp_label, comp_flux in flux_resample.items():
-                comp_flux = comp_flux + cont_flux if comp_label != contLabel else comp_flux
-                ax.plot(wave_resample, comp_flux, label=f'{comp_label}', linestyle='--')
-
-        # Plot selection regions
-        idcsW = np.searchsorted(self.wave, self.lineWaves)
-        ax.fill_between(self.wave[idcsW[0]:idcsW[1]], 0, self.flux[idcsW[0]:idcsW[1]], facecolor='tab:orange',
-                        step="pre", alpha=0.2)
-        ax.fill_between(self.wave[idcsW[2]:idcsW[3]], 0, self.flux[idcsW[2]:idcsW[3]], facecolor='tab:green',
-                        step="pre", alpha=0.2)
-        ax.fill_between(self.wave[idcsW[4]:idcsW[5]], 0, self.flux[idcsW[4]:idcsW[5]], facecolor='tab:orange',
-                        step="pre", alpha=0.2)
-
-        defaultConf = STANDARD_AXES.copy()
-        defaultConf.update(ax_conf)
-
-        if self.normFlux != 1.0:
-            defaultConf['ylabel'] = defaultConf['ylabel'] + " $\\times{{{0:.2g}}}$".format(self.normFlux)
-
-        ax.update(defaultConf)
-        ax.legend()
-
-        if logScale:
-            ax.set_yscale('log')
-
-        if output_address is None:
-            plt.tight_layout()
-            plt.show()
-        else:
-            plt.savefig(output_address, bbox_inches='tight')
-        plt.close(fig)
 
         return
 
@@ -839,11 +770,14 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def plot_detected_lines(self, linesDF, df_file_address, ncols=10, nrows=None):
+    def plot_line_mask_selection(self, linesDF, df_file_address, ncols=10, nrows=None, logscale=True):
 
         # Update mask file for new location
+        # TODO it may be better to clear the linesDF after the plot is done
         self.linesLogAddress = df_file_address
-        self.linesDF = linesDF
+        self.linesDF = pd.DataFrame(columns=LOG_COLUMNS)
+        for column in linesDF.columns:
+            self.linesDF[column] = linesDF[column]
 
         # Plot data
         lineLabels = self.linesDF.index.values
@@ -852,7 +786,7 @@ class LineMesurer(EmissionFitting):
             nrows = int(np.ceil(lineLabels.size / ncols))
 
         # Compute plot grid size
-        plotConf = {'figure.figsize': (nrows * 4, 16)}
+        plotConf = {'figure.figsize': (nrows * 2, 8)}
 
         # Plot format
         defaultConf = STANDARD_PLOT.copy()
@@ -878,6 +812,9 @@ class LineMesurer(EmissionFitting):
 
         plt.gca().axes.yaxis.set_ticklabels([])
         plt.tight_layout()
+        manager = plt.get_current_fig_manager()
+        manager.window.showMaximized()
+
         plt.show()
         plt.close(fig)
 
@@ -950,11 +887,9 @@ class LineMesurer(EmissionFitting):
         # Plot format
         ax.yaxis.set_major_locator(plt.NullLocator())
         ax.xaxis.set_major_locator(plt.NullLocator())
-        if 'latexLabel' in linesDF.columns:
-            title_axes = linesDF.loc[lineLabel, "latexLabel"]
-        else:
-            title_axes = lineLabel
-        ax.update({'title': title_axes})
+
+        ion, wavelength, latexLabel = label_decomposition(lineLabel, scalar_output=True)
+        ax.update({'title': latexLabel})
         # ax.set_yscale('log')
         try:
             idxPeakFlux = np.argmax(fluxPeak)
@@ -1320,6 +1255,7 @@ class LineMesurer(EmissionFitting):
 
     def on_enter_axes(self, event):
 
+        # TODO we need a better way to intedex than the latex label
         self.in_fig = event.canvas.figure
         self.in_ax = event.inaxes
         idx_line = self.linesDF.latexLabel == self.in_ax.get_title()
@@ -1334,8 +1270,8 @@ class LineMesurer(EmissionFitting):
     def on_click(self, event):
         if event.dblclick:
             print(f'{event.button}, {event.x}, {event.y}, {event.xdata}, {event.ydata}')
-        else:
-            print(f'Wave: {event.xdata}')
+        # else:
+        #     print(f'Wave: {event.xdata}')
 
 
 if __name__ == '__main__':

@@ -24,14 +24,14 @@ lm.plot_spectrum(obsLinesTable=obsLinesTable, matchedLinesDF=matchedDF, specLabe
 
 # Improve line region
 corrected_mask_file = Path('./sample_data/gp121903_BR_mask_corrected.txt')
-lm.plot_detected_lines(matchedDF, corrected_mask_file)
+lm.plot_line_mask_selection(matchedDF, corrected_mask_file)
 
 # Measure the emission lines
-obsLines = matchedDF.index.values
-for i, lineLabel in enumerate(obsLines):
-    wave_regions = matchedDF.loc[lineLabel, 'w1':'w6'].values
+objMaskDF = sr.lineslogFile_to_DF(corrected_mask_file)
+for i, lineLabel in enumerate(objMaskDF.index.values):
+    wave_regions = objMaskDF.loc[lineLabel, 'w1':'w6'].values
     lm.fit_from_wavelengths(lineLabel, wave_regions, fit_conf=obsConf['gp121903_line_fitting'])
-    lm.plot_fit_components(lm.fit_output)
+    # lm.plot_fit_components(lm.fit_output)
 
 # Display results
 lm.plot_line_grid(lm.linesDF)

@@ -58,7 +58,7 @@ linesLogAdress = data_folder / data_file.replace('.txt', '_linesLog.txt')
 lm.save_lineslog(linesDb.loc[idcsObsLines], linesLogAdress)
 
 # Plot the matched lines:
-lm.plot_detected_lines(linesDb)
+lm.plot_line_mask_selection(linesDb)
 
 
 
