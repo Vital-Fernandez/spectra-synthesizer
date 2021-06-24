@@ -60,7 +60,7 @@ for i in np.arange(lineLabel.size):
 specWave = lm.wave[indexSpecEmission][:,None]
 specFlux = lm.flux[indexSpecEmission]
 specContinuum = continuumFlux[indexSpecEmission]
-pixelErr = linesDF.loc[lineLabel, 'std_continuum']
+pixelErr = linesDF.loc[lineLabel, 'std_cont']
 
 with pm.Model():
 

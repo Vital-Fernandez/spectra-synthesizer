@@ -39,7 +39,7 @@ objParams['input_lines'] = lineLabels
 ion_array, wavelength_array, latexLabel_array = sr.label_decomposition(objParams['input_lines'])
 
 # Define a pandas dataframe to contain the lines data
-linesLogHeaders = ['wavelength', 'obsFlux', 'obsFluxErr', 'ion', 'blended', 'latexLabel']
+linesLogHeaders = ['wavelength', 'obsFlux', 'obsFluxErr', 'ion', 'blended_label', 'latexLabel']
 objLinesDF = pd.DataFrame(index=lineLabels, columns=linesLogHeaders)
 objLinesDF['ion'] = ion_array
 objLinesDF['wavelength'] = wavelength_array

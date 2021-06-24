@@ -213,7 +213,7 @@ class ExtinctionModel:
             Href_flux, Href_err = line_df.loc[ref_wave, 'intg_flux'], line_df.loc[ref_wave, 'intg_err']
             obsFlux, obsErr = np.empty(line_labels.size), np.empty(line_labels.size)
             slice_df = line_df.loc[idcs_lines]
-            idcs_intg = slice_df.blended == 'None'
+            idcs_intg = slice_df.blended_label == 'None'
             obsFlux[idcs_intg] = slice_df.loc[idcs_intg, 'intg_flux'].values
             obsErr[idcs_intg] = slice_df.loc[idcs_intg, 'intg_err'].values
             obsFlux[~idcs_intg] = slice_df.loc[~idcs_intg, 'gauss_flux'].values

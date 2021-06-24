@@ -49,15 +49,15 @@ for n_obj in range(n_objs):
                                                                         combined_dict=merged_lines)
 
     # Define a pandas dataframe to contain the lines data
-    linesLogHeaders = ['wavelength', 'obsFlux', 'obsFluxErr', 'ion', 'blended', 'latexLabel']
+    linesLogHeaders = ['wavelength', 'obsFlux', 'obsFluxErr', 'ion', 'blended_label', 'latexLabel']
     objLinesDF = pd.DataFrame(index = objParams['input_lines'], columns=linesLogHeaders)
     objLinesDF['ion'] = ion_array
     objLinesDF['wavelength'] = wavelength_array
     objLinesDF['latexLabel'] = latexLabel_array
 
-    objLinesDF['blended'] = 'None'
+    objLinesDF['blended_label'] = 'None'
     idcs_blended = objLinesDF.index.isin(merged_lines.keys())
-    objLinesDF.loc[idcs_blended, 'blended'] = list(merged_lines.values())
+    objLinesDF.loc[idcs_blended, 'blended_label'] = list(merged_lines.values())
 
     objLinesDF.sort_values(by=['wavelength'], ascending=True, inplace=True)
 
