@@ -33,7 +33,8 @@ from .tools.line_measure import LineMesurer, lineslogFile_to_DF, save_lineslog
 from data_printing import label_decomposition
 from .data.spectra_files import import_fits_data
 from .print import plot
-from .physical_model.photo_ionization_model import load_ionization_grid
+from .physical_model.photo_ionization_model import load_ionization_grid, ModelGridWrapper
+
 
 # Get default configuration settings
 _default_cfg = loadConfData(os.path.join(_dir_path, 'config.ini'), group_variables=False)

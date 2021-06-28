@@ -87,7 +87,6 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
             self.obsIons = chemistry_model.obsAtoms
             self.idcs_highTemp_ions = chemistry_model.indcsHighTemp[idcs_lines]
 
-
         # Establish minimum error on lines
         if minErr is not None:
             err_fraction = self.emissionErr / self.emissionFluxes

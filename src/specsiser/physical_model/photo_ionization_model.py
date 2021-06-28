@@ -1,5 +1,6 @@
 import numpy as np
 from physical_model.gasEmission_functions import gridInterpolatorFunction
+import exoplanet as xo
 
 # Function to read the ionization data
 def load_ionization_grid(log_scale=False, log_zero_value = -1000):
@@ -56,9 +57,34 @@ def load_ionization_grid(log_scale=False, log_zero_value = -1000):
     return grid_dict, grid_axes
 
 
+def gridInterpolatorFunction(interpolatorDict, x_range, y_range, z_range=None, interp_type='point'):
+
+    emisInterpGrid = {}
+
+    if interp_type == 'point':
+        for line, emisGrid_i in interpolatorDict.items():
+            emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i[:, :, None], nout=1)
+            emisInterpGrid[line] = emisInterp_i.evaluate
+
+    elif interp_type == 'axis':
+        for line, emisGrid_i in interpolatorDict.items():
+            emisGrid_i_reshape = emisGrid_i.reshape((x_range.size, y_range.size, -1))
+            emisInterp_i = xo.interp.RegularGridInterpolator([x_range, y_range], emisGrid_i_reshape)
+            emisInterpGrid[line] = emisInterp_i.evaluate
+
+    elif interp_type == 'cube':
+        for line, grid_ndarray in interpolatorDict.items():
+            xo_interp = xo.interp.RegularGridInterpolator([x_range,
+                                                           y_range,
+                                                           z_range], grid_ndarray)
+            emisInterpGrid[line] = xo_interp.evaluate
+
+    return emisInterpGrid
+
+
 class ModelGridWrapper:
 
-    def __init__(self):
+    def __init__(self, grid_address=None):
 
         self.grid_LineLabels = None
         self.grid_emissionFluxes = None
@@ -66,8 +92,71 @@ class ModelGridWrapper:
 
         self.gridInterp = None
         self.idx_analysis_lines = None
+        self.grid_array = None
 
         return
+
+    def ndarray_from_DF(self, grid_DF, axes_columns=None, data_columns='all', sort_axes=True, dict_output=True,
+                        default_value=np.nan):
+
+        if sort_axes:
+            assert set(axes_columns).issubset(set(grid_DF.columns.values)), f'- Error: Mesh grid does not include all' \
+                                                                            f' input columns {axes_columns}'
+            grid_DF.sort_values(axes_columns, inplace=True)
+
+        # Compute axes coordinates for reshaping
+        axes_cords = {}
+        reshape_array = np.zeros(len(axes_columns)).astype(int)
+        for i, ax_name in enumerate(axes_columns):
+            axes_cords[ax_name] = np.unique(grid_DF[ax_name].values)
+            reshape_array[i] = axes_cords[ax_name].size
+
+        # Declare grid data columns
+        if data_columns == 'all':
+            data_columns = grid_DF.columns[~grid_DF.columns.isin(axes_columns)].values
+        axes_cords['data'] = data_columns
+        # Establish output format
+
+        # mesh_dict
+        if dict_output:
+            output_container = {}
+            for i, dataColumn in enumerate(data_columns):
+                data_array_flatten = grid_DF[dataColumn].values
+                output_container[dataColumn] = data_array_flatten.reshape(reshape_array.astype(int))
+
+        # mesh_array
+        else:
+            output_container = np.full(np.hstack((reshape_array, len(data_columns))), np.nan)
+            for i, dataColumn in enumerate(data_columns):
+                data_array_flatten = grid_DF[dataColumn].values
+                output_container[..., i] = data_array_flatten.reshape(reshape_array.astype(int))
+
+        return output_container, axes_cords
+
+    def generate_xo_interpolators(self, grid_dict, axes_list, axes_coords, interp_type='point'):
+
+        output_container = {}
+
+        # Establish interpolation axes
+        ax_range_container = [None] * len(axes_list)
+        for i, ax in enumerate(axes_list):
+            ax_range_container[i] = axes_coords[ax]
+
+        if interp_type == 'point':
+            for grid_key, grid_ndarray in grid_dict.items():
+                xo_interp = xo.interp.RegularGridInterpolator(ax_range_container, grid_ndarray)
+                output_container[grid_key] = xo_interp.evaluate
+
+        if interp_type == 'axis':
+            # Generate mdgrid grid
+
+            for grid_key, grid_ndarray in grid_dict.items():
+                assert axes_list - 1 == grid_ndarray.shape[-1], f'- Interpolator for {grid_key} does not match number of dimensions'
+                grid_ndarray = grid_ndarray.reshape(ax_range_container + [-1])
+                xo_interp = xo.interp.RegularGridInterpolator(ax_range_container, grid_ndarray)
+                output_container[grid_key] = xo_interp.evaluate
+
+        return output_container
 
     def HII_Teff_models(self, obsLines, obsFluxes, obsErr):
 
