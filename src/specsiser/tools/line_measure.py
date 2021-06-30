@@ -213,8 +213,6 @@ def save_lineslog(linesDF, file_address):
 
 class LineMesurer(EmissionFitting):
 
-    _linesDF = None
-
     def __init__(self, input_wave=None, input_flux=None, input_err=None, linesDF_address=None, redshift=0,
                  normFlux=1, crop_waves=None):
 
@@ -417,7 +415,8 @@ class LineMesurer(EmissionFitting):
 
     def continuum_remover(self, noiseRegionLims, intLineThreshold=((4, 4), (1.5, 1.5)), degree=(3, 7)):
 
-        assert self.wave[0] < noiseRegionLims[0] and noiseRegionLims[1] < self.wave[-1]
+        assert self.wave_rest[0] < noiseRegionLims[0] and noiseRegionLims[1] < self.wave_rest[-1], \
+            f'Error noise region {self.wave_rest[0]} < {noiseRegionLims[0]} and {noiseRegionLims[1]} < {self.wave_rest[-1]}'
 
         # Identify high flux regions
         idcs_noiseRegion = (noiseRegionLims[0] <= self.wave_rest) & (self.wave_rest <= noiseRegionLims[1])
@@ -666,6 +665,7 @@ class LineMesurer(EmissionFitting):
         # TODO this function should read from lines log
         # TODO this causes issues if vary is false... need a better way to get label
         line_label = line_label if line_label is not None else self.lineLabel
+        ion, wave, latexLabel = label_decomposition(line_label, scalar_output=True)
 
         # Plot Configuration
         defaultConf = STANDARD_PLOT.copy()
@@ -706,7 +706,7 @@ class LineMesurer(EmissionFitting):
         idcs_plot = (wave_plot[idcsContBlue][0] - 5 <= wave_plot) & (wave_plot <= wave_plot[idcsContRed][-1] + 5)
 
         # Plot line spectrum
-        ax[0].step(wave_plot[idcs_plot], flux_plot[idcs_plot], label='Observed spectrum', where='mid')
+        ax[0].step(wave_plot[idcs_plot], flux_plot[idcs_plot], label=r'Observed spectrum: {}'.format(latexLabel), where='mid')
         ax[0].scatter(self.peak_wave/z_cor, self.peak_flux*z_cor, color='tab:blue', alpha=0.7)
 
         # Plot selection regions
@@ -818,8 +818,7 @@ class LineMesurer(EmissionFitting):
                 lineLabel = lineLabels[i]
                 lineWaves = linesDF.loc[lineLabel, 'w1':'w6'].values
                 latexLabel = linesDF.loc[lineLabel, 'latexLabel']
-                line_params = linesDF.loc[lineLabel, ['m_cont', 'n_cont']].values
-                gaus_params = linesDF.loc[lineLabel, ['amp', 'center', 'sigma']].values
+
 
                 # Establish spectrum line and continua regions
                 idcsEmis, idcsContBlue, idcsContRed = self.define_masks(self.wave_rest,
@@ -836,23 +835,28 @@ class LineMesurer(EmissionFitting):
                 ax_i.fill_between(wave_plot[idcsEmis], 0, flux_plot[idcsEmis], facecolor='tab:blue', step="mid", alpha=0.2)
                 ax_i.fill_between(wave_plot[idcsContRed], 0, flux_plot[idcsContRed], facecolor='tab:orange', step="mid", alpha=0.2)
 
-                # Plot curve fitting
-                if (not pd.isnull(line_params).any()) and (not pd.isnull(gaus_params).any()):
+                if set(['m_cont', 'n_cont', 'amp', 'center', 'sigma']).issubset(linesDF.columns):
 
-                    wave_resample = np.linspace(self.wave[idcs_plot][0], self.wave[idcs_plot][-1], 500)
+                    line_params = linesDF.loc[lineLabel, ['m_cont', 'n_cont']].values
+                    gaus_params = linesDF.loc[lineLabel, ['amp', 'center', 'sigma']].values
 
-                    m_cont, n_cont = line_params /self.normFlux
-                    line_resample = linear_model(wave_resample, m_cont, n_cont)
+                    # Plot curve fitting
+                    if (not pd.isnull(line_params).any()) and (not pd.isnull(gaus_params).any()):
 
-                    amp, mu, sigma = gaus_params
-                    amp = amp/self.normFlux
-                    gauss_resample = gaussian_model(wave_resample, amp, mu, sigma) + line_resample
-                    ax_i.plot(wave_resample/z_cor, gauss_resample*z_cor, '--', color='tab:purple', linewidth=1.50)
+                        wave_resample = np.linspace(self.wave[idcs_plot][0], self.wave[idcs_plot][-1], 500)
 
-                else:
-                    for child in ax_i.get_children():
-                        if isinstance(child, spines.Spine):
-                            child.set_color('tab:red')
+                        m_cont, n_cont = line_params /self.normFlux
+                        line_resample = linear_model(wave_resample, m_cont, n_cont)
+
+                        amp, mu, sigma = gaus_params
+                        amp = amp/self.normFlux
+                        gauss_resample = gaussian_model(wave_resample, amp, mu, sigma) + line_resample
+                        ax_i.plot(wave_resample/z_cor, gauss_resample*z_cor, '--', color='tab:purple', linewidth=1.50)
+
+                    else:
+                        for child in ax_i.get_children():
+                            if isinstance(child, spines.Spine):
+                                child.set_color('tab:red')
 
                 # Axis format
                 ax_i.yaxis.set_major_locator(plt.NullLocator())
@@ -908,7 +912,7 @@ class LineMesurer(EmissionFitting):
         # Generate plot
         for i in np.arange(lineLabels.size):
             self.lineWaves = self.linesDF.loc[lineLabels[i], 'w1':'w6'].values
-            self.plot_line_region_i(axesList[i], lineLabels[i], self.linesDF)
+            self.plot_line_region_i(axesList[i], lineLabels[i], self.linesDF, logscale=logscale)
             dict_spanSelec[f'spanner_{i}'] = SpanSelector(axesList[i],
                                                           self.on_select,
                                                           'horizontal',
@@ -928,7 +932,7 @@ class LineMesurer(EmissionFitting):
 
         return
 
-    def plot_line_region_i(self, ax, lineLabel, linesDF, limitPeak=5):
+    def plot_line_region_i(self, ax, lineLabel, linesDF, limitPeak=5, logscale=False):
 
         # Plot line region:
         lineWave = linesDF.loc[lineLabel, 'wavelength']
@@ -996,6 +1000,9 @@ class LineMesurer(EmissionFitting):
 
         ax.yaxis.set_ticklabels([])
         ax.axes.yaxis.set_visible(False)
+
+        if logscale:
+            ax.set_yscale('log')
 
         return
 
@@ -1343,7 +1350,7 @@ class LineMesurer(EmissionFitting):
 
             # Redraw the line measurement
             self.in_ax.clear()
-            self.plot_line_region_i(self.in_ax, self.lineLabel, self.linesDF)
+            self.plot_line_region_i(self.in_ax, self.lineLabel, self.linesDF, logscale=False)
 
             self.in_fig.canvas.draw()
 

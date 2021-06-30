@@ -23,6 +23,26 @@ def import_fits_data(file_address, instrument, frame_idx=None):
 
         return wave, data, header
 
+    elif instrument == 'fits-cube':
+
+        # Open fits file
+        with astrofits.open(file_address) as hdul:
+            data, hdr = hdul[frame_idx].data, hdul[frame_idx].header
+
+
+        dw = hdr['CD3_3']
+        w_min = hdr['CRVAL3']
+        nPixels = hdr['NAXIS3']
+        w_max = w_min + dw * nPixels
+        wave = np.linspace(w_min, w_max, nPixels, endpoint=False)
+
+        print('CD3_3', dw)
+        print('CRVAL3', w_min)
+        print('NAXIS3', nPixels)
+        print('np.diff', np.diff(wave).mean(), np.std(np.diff(wave)))
+
+        return wave, data, hdr
+
     elif instrument == 'MUSE':
 
         cube = Cube(filename=str(file_address))

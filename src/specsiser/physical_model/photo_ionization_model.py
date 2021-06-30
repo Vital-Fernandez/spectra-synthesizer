@@ -137,7 +137,7 @@ class ModelGridWrapper:
 
         output_container = {}
 
-        # Establish interpolation axes
+        # Establish interpolation axes: (x_range, y_range, z_range,...)
         ax_range_container = [None] * len(axes_list)
         for i, ax in enumerate(axes_list):
             ax_range_container[i] = axes_coords[ax]
@@ -148,8 +148,10 @@ class ModelGridWrapper:
                 output_container[grid_key] = xo_interp.evaluate
 
         if interp_type == 'axis':
+
             # Generate mdgrid grid
 
+            # Produce the interpolator
             for grid_key, grid_ndarray in grid_dict.items():
                 assert axes_list - 1 == grid_ndarray.shape[-1], f'- Interpolator for {grid_key} does not match number of dimensions'
                 grid_ndarray = grid_ndarray.reshape(ax_range_container + [-1])
