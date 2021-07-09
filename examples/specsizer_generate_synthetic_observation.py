@@ -92,6 +92,10 @@ for n_obj in range(n_objs):
 
     # Compile exoplanet interpolator functions so they can be used wit numpy
     emisGridInterpFun = sr.gridInterpolatorFunction(objIons.emisGridDict, objIons.tempRange, objIons.denRange)
+    # gw = sr.ModelGridWrapper()
+    # model_variables = ['Te', 'ne']
+    # axes_cords_a = dict(Te=objIons.tempRange, ne=objIons.denRange)
+    # emisGridInterpFun = gw.generate_xo_interpolators(objIons.emisGridDict, model_variables, axes_cords_a, interp_type='point')
 
     # Compute the emission line fluxess
     lineLogFluxes = np.empty(len(objLinesDF))

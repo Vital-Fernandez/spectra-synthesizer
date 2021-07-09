@@ -179,7 +179,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
         labels_list = linesDF.index.values
         ions_list = linesDF.ion.values
         waves = linesDF.wavelength.values
-        blended_list = linesDF.blended.values
+        # blended_list = linesDF.blended.values
 
         # Generate a grid with the default reference line
         if normLine == 'H1_4861A':

@@ -134,7 +134,7 @@ class EmissionFitting:
         self.std_cont = np.std(contFlux - continuaFit)
         self.cont = self.peak_wave * self.m_cont + self.n_cont
         self.snr_line, self.snr_cont = iraf_snr(emisFlux), iraf_snr(contFlux)
-        print(self.lineLabel, self.pixelWidth)
+
         # Establish the pixel sigma error
         err_array = self.std_cont if emisErr is None else emisErr
 

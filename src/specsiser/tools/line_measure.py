@@ -55,6 +55,52 @@ LOG_COLUMNS = {'wavelength': [False, False, True],
                'observation': [False, False, False],
                'comments': [False, False, False]}
 
+LINELOG_TYPES = {'index': '<U50',
+                 'wavelength': '<f8',
+                 'intg_flux': '<f8',
+                 'intg_err': '<f8',
+                 'gauss_flux': '<f8',
+                 'gauss_err': '<f8',
+                 'eqw': '<f8',
+                 'eqw_err': '<f8',
+                 'ion': '<U50',
+                 'pynebCode': '<f8',
+                 'pynebLabel': '<f8',
+                 'lineType': '<f8',
+                 'latexLabel': '<U50',
+                 'blended_label': '<U50',
+                 'w1': '<f8',
+                 'w2': '<f8',
+                 'w3': '<f8',
+                 'w4': '<f8',
+                 'w5': '<f8',
+                 'w6': '<f8',
+                 'm_cont': '<f8',
+                 'n_cont': '<f8',
+                 'cont': '<f8',
+                 'std_cont': '<f8',
+                 'peak_flux': '<f8',
+                 'peak_wave': '<f8',
+                 'snr_line': '<f8',
+                 'snr_cont': '<f8',
+                 'amp': '<f8',
+                 'mu': '<f8',
+                 'sigma': '<f8',
+                 'amp_err': '<f8',
+                 'mu_err': '<f8',
+                 'sigma_err': '<f8',
+                 'v_r': '<f8',
+                 'v_r_err': '<f8',
+                 'sigma_vel': '<f8',
+                 'sigma_err_vel': '<f8',
+                 'observation': '<U50',
+                 'comments': '<U50',
+                 'obsFlux': '<f8',
+                 'obsFluxErr': '<f8',
+                 'f_lambda': '<f8',
+                 'obsInt': '<f8',
+                 'obsIntErr': '<f8'}
+
 _LOG_EXPORT = list(set(LOG_COLUMNS.keys()) - set(['ion', 'wavelength',
                                                  'latexLabel',
                                                  'w1', 'w2',
@@ -721,8 +767,6 @@ class LineMesurer(EmissionFitting):
         if log_scale:
             ax[0].set_yscale('log')
 
-        ax[0].legend()
-        ax[0].update(defaultConf)
 
         # Plot the Gaussian fit if available
         if lmfit_output is not None:
@@ -731,7 +775,7 @@ class LineMesurer(EmissionFitting):
             x_in, y_in = lmfit_output.userkws['x'], lmfit_output.data
 
             # Resample gaussians
-            wave_resample = np.linspace(x_in[0], x_in[-1], 100)
+            wave_resample = np.linspace(x_in[0], x_in[-1], 200)
             flux_resample = lmfit_output.eval_components(x=wave_resample)
 
             # Plot input data
@@ -750,10 +794,11 @@ class LineMesurer(EmissionFitting):
                 ax[0].plot(wave_resample/z_cor, comp_flux*z_cor, label=f'{comp_label}', linestyle='--')
 
             # Continuum residual plot:
-            residual = (y_in - lmfit_output.best_fit)/y_in
+            residual = (y_in - lmfit_output.best_fit)/self.cont
             ax[1].step(x_in/z_cor, residual*z_cor, where='mid')
 
             label = r'$\sigma_{Continuum}/\overline{F(linear)}$'
+            print('Sigma', self.std_cont, 'norm_sigma', self.std_cont / self.cont)
             y_low, y_high = -self.std_cont / self.cont, self.std_cont / self.cont
             ax[1].fill_between(x_in/z_cor, y_low*z_cor, y_high*z_cor, facecolor='tab:orange', alpha=0.5, label=label)
 
@@ -766,9 +811,12 @@ class LineMesurer(EmissionFitting):
             # Residual plot labeling
             ax[1].set_xlim(ax[0].get_xlim())
             ax[1].set_ylim(2*residual.min(), 2*residual.max())
-            ax[1].legend(loc='center left', framealpha=1)
+            ax[1].legend(loc='upper left')
             ax[1].set_ylabel(r'$\frac{F_{obs}}{F_{fit}} - 1$')
             ax[1].set_xlabel(r'Wavelength $(\AA)$')
+
+        ax[0].legend()
+        ax[0].update(defaultConf)
 
         if output_address is None:
             plt.tight_layout()

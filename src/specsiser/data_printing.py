@@ -82,6 +82,8 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'x': r'x interpolator$',
              'ICF_SIV': r'$ICF\left(S^{3+}\right)$',
              'logU': r'$log(U)$',
+             'logOH': r'$log(O/H)$',
+             'logNO': r'$log(N/O)$',
              'Teff': r'$T_{eff}$',
              'X_i+': r'$X^{i+}$',
              'log(X_i+)': r'$12+log\left(X^{i+}\right)$'}
@@ -793,19 +795,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def tracesPosteriorPlot(self, plot_address, db_dict, true_values=None, plot_conf={}):
-
-        # Prepare the data
-        total_params_list = np.array(list(db_dict['Fitting_results'].keys()))
-        traces_param = []
-        for param in total_params_list:
-            if '_Op' not in param:
-                traces_param.append(param)
-        traces_param = np.array(traces_param)
-
-        # Establish the params analysed
-        idx_analysis_lines = np.in1d(traces_param, db_dict['trace'].varnames)
-        params_list = traces_param[idx_analysis_lines]
+    def tracesPosteriorPlot(self, plot_address, params_list, traces_dict, true_values=None, plot_conf={}):
 
         if true_values is not None:
             trace_true_dict = {}
@@ -825,11 +815,10 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         gs = gridspec.GridSpec(n_traces * 2, 4)
         gs.update(wspace=0.2, hspace=1.8)
 
-        traces = db_dict['trace']
         for i in range(n_traces):
 
             trace_code = params_list[i]
-            trace_array = traces[trace_code]
+            trace_array = traces_dict[trace_code]
 
             mean_value = np.mean(trace_array)
             std_dev = np.std(trace_array)
@@ -837,18 +826,11 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             axTrace = fig.add_subplot(gs[2 * i:2 * (1 + i), :3])
             axPoterior = fig.add_subplot(gs[2 * i:2 * (1 + i), 3])
 
-
             # Label for the plot
-            if mean_value > 10:
+            if mean_value > 10: # TODO need a special rutine
                 label = r'{} = ${:.0f}$$\pm${:.0f}'.format(latex_labels[trace_code], mean_value, std_dev)
             else:
                 label = r'{} = ${:.3f}$$\pm${:.3f}'.format(latex_labels[trace_code], mean_value, std_dev)
-
-            # # Label for the plot
-            # if mean_value > 0.001:
-            #     label = r'{} = ${}$ $\pm${}'.format(latex_labels[trace_code], np.round(mean_value, 4), np.round(std_dev, 4))
-            # else:
-            #     label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[trace_code], mean_value, std_dev)
 
             # Plot the traces
             axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
@@ -894,7 +876,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
             axTrace.set_yticks((percentile16th, median, percentile84th))
             round_n = 0 if median > 10 else 3
-            axTrace.set_yticklabels((numberStringFormat(percentile16th,round_n), '', numberStringFormat(percentile84th,round_n)))
+            axTrace.set_yticklabels((numberStringFormat(percentile16th,round_n), '', numberStringFormat(percentile84th, round_n)))
 
         if plot_address is not None:
             plt.savefig(plot_address, dpi=200, bbox_inches='tight')
@@ -1091,20 +1073,14 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             self.Axis[i].set_ylabel(self.labels_latex_dic[trace_code])
             self.legend_conf(self.Axis[i], loc=2)
 
-    def fluxes_distribution(self, plot_address, db_dict, n_columns=8, combined_dict={}, plot_conf = {}):
+    def fluxes_distribution(self, plot_address, input_lines, inFlux, inErr, trace_dict, n_columns=8, combined_dict={},
+                            plot_conf={}):
 
         # Input data
-        inputLabels = db_dict['Input_data']['lineLabels_list']
-        inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
-        ion_array, wave_array, latexLabel_array = label_decomposition(inputLabels, combined_dict=combined_dict)
-        trace = db_dict['trace']
-        model = db_dict['model']
-
-        flux_matrix = db_dict['trace']['calcFluxes_Op']
-        median_values = np.median(flux_matrix, axis=0)
+        ion_array, wave_array, latexLabel_array = label_decomposition(input_lines, combined_dict=combined_dict)
 
         # Declare plot grid size
-        n_lines = len(inputLabels)
+        n_lines = len(input_lines)
         n_rows = int(np.ceil(float(n_lines)/float(n_columns)))
         n_cells = n_rows * n_columns
 
@@ -1129,10 +1105,10 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             if i < n_lines:
 
                 # Current line
-                label = inputLabels[i]
+                label = input_lines[i]
                 ion = ion_array[i]
-                trace = flux_matrix[:, i]
-                median_flux = median_values[i]
+                trace = trace_dict[label]
+                median_flux = np.median(trace)
 
                 label_mean = 'Mean value: {}'.format(np.around(median_flux, 4))
                 axes[i].hist(trace, histtype='stepfilled', bins=35, alpha=.7, color=cmap(colorNorm(colorDict[ion])), density=False)
@@ -1155,83 +1131,6 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         else:
             # plt.tight_layout()
             plt.show()
-
-        return
-
-    def fluxes_photoIonization_distribution(self, plot_address, db_dict, n_columns=8, combined_dict={}):
-
-        # Input data
-        inputLabels = db_dict['Input_data']['lineLabels_list']
-        inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
-        trace = db_dict['trace']
-
-        # Output data
-        if 'calcFluxes_Op' in trace:
-            flux_matrix = db_dict['trace']['calcFluxes_Op']
-            median_values = np.median(flux_matrix, axis=0)
-        else:
-            flux_tensor_dict = {}
-            for i, lineLabel in enumerate(inputLabels):
-                tensor_ref = f'{inputLabels[i]}_Op'
-                if tensor_ref in trace.varnames:
-                    flux_tensor_dict[lineLabel] = trace[tensor_ref]
-
-            n_steps = trace[trace.varnames[0]].size
-            n_linesModel = len(flux_tensor_dict)
-            flux_matrix = np.zeros((n_steps, n_linesModel))
-            for i, item in enumerate(flux_tensor_dict.items()):
-                lineLabel, lineMatrix = item
-                flux_matrix[:, i] = flux_tensor_dict[lineLabel]
-            median_values = np.median(flux_matrix, axis=0)
-            modelLineLabels = np.array(list(flux_tensor_dict))
-
-        idx_analysis_lines = np.in1d(inputLabels, modelLineLabels)
-        inFlux = db_dict['Input_data']['inputFlux_array'][idx_analysis_lines]
-        inErr = db_dict['Input_data']['inputErr_array'][idx_analysis_lines]
-
-        ion_array, wave_array, latexLabel_array = label_decomposition(modelLineLabels, combined_dict=combined_dict)
-
-        # Declare plot grid size
-        n_lines = len(modelLineLabels)
-        n_rows = int(np.ceil(float(n_lines)/float(n_columns)))
-
-        # Declare figure format
-        size_dict = {'figure.figsize': (22, 9), 'axes.titlesize': 14, 'axes.labelsize': 10, 'legend.fontsize': 10,
-                     'xtick.labelsize': 8, 'ytick.labelsize': 3}
-        rcParams.update(size_dict)
-
-        #self.FigConf(plotSize=size_dict, Figtype='Grid', n_columns=n_columns, n_rows=n_rows)
-        fig, axes = plt.subplots(n_rows, n_columns)
-        axes = axes.ravel()
-
-        # Generate the color dict
-        obsIons = np.unique(ion_array)
-        colorNorm, cmap = self.gen_colorList(0, obsIons.size)
-        colorDict = dict(zip(obsIons, np.arange(obsIons.size)))
-
-        # Plot individual traces
-        for i in range(n_lines):
-
-            # Current line
-            label = modelLineLabels[i]
-            ion = ion_array[i]
-            trace = flux_matrix[:, i]
-            median_flux = median_values[i]
-
-            label_mean = 'Mean value: {}'.format(np.around(median_flux, 4))
-            axes[i].hist(trace, histtype='stepfilled', bins=35, alpha=.7, color=cmap(colorNorm(colorDict[ion])), density=False)
-
-            label_true = 'True value: {}'.format(np.around(inFlux[i], 3))
-            axes[i].axvline(x=inFlux[i], label=label_true, color='black', linestyle='solid')
-            axes[i].axvspan(inFlux[i] - inErr[i], inFlux[i] + inErr[i], alpha=0.5, color='grey')
-            axes[i].get_yaxis().set_visible(False)
-            axes[i].set_yticks([])
-
-            # Plot wording
-            axes[i].set_title(latexLabel_array[i])
-
-        plt.savefig(plot_address, dpi=200, bbox_inches='tight')
-        plt.close(fig)
 
         return
 
@@ -1267,7 +1166,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
             else:
                 # Apano momentaneo
-                chisq_adapted = reshape(trace_array, len(trace_array))
+                chisq_adapted = np.reshape(trace_array, len(trace_array))
                 maxlags = min(len(chisq_adapted) - 1, 100)
                 self.Axis[i].acorr(x=chisq_adapted, color=self.get_color(i), detrend=detrend_mean, maxlags=maxlags)
 
@@ -1276,29 +1175,14 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def corner_plot(self, plot_address, db_dict, true_values=None):
-
-        # Prepare the data
-        total_params_list = np.array(list(db_dict['Fitting_results'].keys()))
-        traces_param = []
-        for param in total_params_list:
-            if '_Op' not in param:
-                traces_param.append(param)
-        traces_param = np.array(traces_param)
-
-        # Establish the params analysed
-        idx_analysis_lines = np.in1d(traces_param, db_dict['trace'].varnames)
-        params_list = traces_param[idx_analysis_lines]
+    def corner_plot(self, plot_address, params_list, traces_dict, true_values=None):
 
         # Reshape plot data
-        traces = db_dict['trace']
         n_traces = len(params_list)
         list_arrays, labels_list = [], []
         for i in range(n_traces):
-
             trace_code = params_list[i]
-            trace_array = traces[trace_code]
-
+            trace_array = traces_dict[trace_code]
             list_arrays.append(trace_array)
             labels_list.append(latex_labels[trace_code])
         traces_array = np.array(list_arrays).T
@@ -1355,80 +1239,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-
-    def corner_plot_backUp(self, params_list, stats_dic, idx_region=0, true_values=None):
-
-        # Remove operations from the parameters list # TODO addapt this line to discremenate better
-        traces_list = stats_dic.keys()
-        region_ext = f'_{idx_region}'
-
-        traces, traceTrueValuse = [], []
-        for param_name in params_list:
-
-            paramExt_name = param_name + region_ext
-            if param_name in stats_dic:
-                ref_name = param_name
-            elif paramExt_name in stats_dic:
-                ref_name = paramExt_name
-            traces.append(ref_name)
-
-            if true_values is not None:
-                if param_name in true_values:
-                    traceTrueValuse.append(true_values[param_name])
-                else:
-                    traceTrueValuse.append(None)
-
-        if true_values is None:
-            traceTrueValuse = [None] * len(traces)
-
-        # Reshape plot data
-        list_arrays, labels_list = [], []
-        for trace_code in traces:
-            trace_array = stats_dic[trace_code]
-            list_arrays.append(trace_array)
-            traceLatexRef = trace_code.replace(region_ext, '')
-            labels_list.append(latex_labels[traceLatexRef])
-        traces_array = np.array(list_arrays).T
-
-        # Dark model
-        # # Declare figure format
-        # background = np.array((43, 43, 43)) / 255.0
-        # foreground = np.array((179, 199, 216)) / 255.0
-        #
-        # figConf = {'text.color': foreground,
-        #            'figure.figsize': (16, 10),
-        #            'figure.facecolor': background,
-        #            'axes.facecolor': background,
-        #            'axes.edgecolor': foreground,
-        #            'axes.labelcolor': foreground,
-        #            'axes.labelsize': 30,
-        #            'xtick.labelsize': 12,
-        #            'ytick.labelsize': 12,
-        #            'xtick.color': foreground,
-        #            'ytick.color': foreground,
-        #            'legend.edgecolor': 'inherit',
-        #            'legend.facecolor': 'inherit',
-        #            'legend.fontsize': 16,
-        #            'legend.loc': "center right"}
-        # rcParams.update(figConf)
-        # # Generate the plot
-        # mykwargs = {'no_fill_contours':True, 'fill_contours':True}
-        # self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
-        #                          show_titles=True, title_args={"fontsize": 200},
-        #                          truth_color='#ae3135', title_fmt='0.3f', color=foreground, **mykwargs)#, hist2d_kwargs = {'cmap':'RdGy',
-        #                                                                                    #'fill_contours':False,
-        #                                                                                    #'plot_contours':False,
-        #                                                                                    #'plot_datapoints':False})
-
-
-        # # Generate the plot
-        self.Fig = corner.corner(traces_array[:, :], fontsize=30, labels=labels_list, quantiles=[0.16, 0.5, 0.84],
-                                 show_titles=True, title_args={"fontsize": 200}, truths=traceTrueValuse,
-                                 truth_color='#ae3135', title_fmt='0.3f')
-
-        return
-
-    def table_mean_outputs(self, table_address, db_dict, true_values=None, file_type='table'):
+    def table_mean_outputs(self, table_address, parameter_list, trace_dict, true_values=None, file_type='table'):
 
         # Table headers
         headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
@@ -1444,41 +1255,38 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         tableDF = pd.DataFrame(columns=headers[1:])
 
         # Loop around the parameters
-        parameters_list = list(db_dict['Fitting_results'].keys())
-        for param in parameters_list:
-            if '_Op' not in param:
-                if param in db_dict['trace'].varnames:
+        for param in parameter_list:
 
-                    trace_i = db_dict['trace'][param]
+            trace_i = trace_dict[param]
 
-                    label = latex_labels[param]
-                    mean_value = np.mean(trace_i)
-                    std = np.std(trace_i)
-                    n_traces = trace_i.size
-                    median = np.median(trace_i)
-                    p_16th = np.percentile(trace_i, 16)
-                    p_84th = np.percentile(trace_i, 84)
+            label = latex_labels[param]
+            mean_value = np.mean(trace_i)
+            std = np.std(trace_i)
+            n_traces = trace_i.size
+            median = np.median(trace_i)
+            p_16th = np.percentile(trace_i, 16)
+            p_84th = np.percentile(trace_i, 84)
 
-                    true_value, perDif = 'None', 'None'
+            true_value, perDif = 'None', 'None'
 
-                    if true_values is not None:
-                        if param in true_values:
-                            value_param = true_values[param]
-                            if isinstance(value_param, (list, tuple, np.ndarray)):
-                                true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
-                                perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
-
-                            else:
-                                true_value = value_param
-                                perDif = str(np.round((1 - (true_value / median)) * 100, 2))
-
-                        row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
+            if true_values is not None:
+                if param in true_values:
+                    value_param = true_values[param]
+                    if isinstance(value_param, (list, tuple, np.ndarray)):
+                        true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
+                        perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
 
                     else:
-                        row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
+                        true_value = value_param
+                        perDif = str(np.round((1 - (true_value / median)) * 100, 2))
 
-                    self.addTableRow(row_i, last_row=False if parameters_list[-1] != param else True)
-                    tableDF.loc[row_i[0]] = row_i[1:]
+                row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
+
+            else:
+                row_i = [label, mean_value, std, n_traces, median, p_16th, p_84th]
+
+            self.addTableRow(row_i, last_row=False if parameter_list[-1] != param else True)
+            tableDF.loc[row_i[0]] = row_i[1:]
 
         self.generate_pdf(output_address=table_address)
 
@@ -1489,7 +1297,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def table_line_fluxes_photoIoniz(self, table_address, db_dict, combined_dict={}, file_type='table'):
+    def table_line_fluxes(self, table_address, input_lines, inFlux, inErr, traces_dict, combined_dict={}, file_type='table'):
 
         # Table headers
         headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
@@ -1500,102 +1308,30 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         self.create_pdfDoc(pdf_type=file_type)
         self.pdf_insert_table(headers)
 
-        # Input data
-        inputLabels = db_dict['Input_data']['lineLabels_list']
-        # inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
-        trace = db_dict['trace']
-
         # Output data
-        if 'calcFluxes_Op' in trace:
-            flux_matrix = db_dict['trace']['calcFluxes_Op']
-        else:
-            flux_tensor_dict = {}
-            for i, lineLabel in enumerate(inputLabels):
-                tensor_ref = f'{inputLabels[i]}_Op'
-                if tensor_ref in trace.varnames:
-                    flux_tensor_dict[lineLabel] = trace[tensor_ref]
-
-            n_steps = trace[trace.varnames[0]].size
-            n_linesModel = len(flux_tensor_dict)
-            flux_matrix = np.zeros((n_steps, n_linesModel))
-            for i, item in enumerate(flux_tensor_dict.items()):
-                lineLabel, lineMatrix = item
-                flux_matrix[:, i] = flux_tensor_dict[lineLabel]
-            modelLineLabels = np.array(list(flux_tensor_dict))
-
-        idx_analysis_lines = np.in1d(inputLabels, modelLineLabels)
-        inFlux = db_dict['Input_data']['inputFlux_array'][idx_analysis_lines]
-        inErr = db_dict['Input_data']['inputErr_array'][idx_analysis_lines]
-
-        # Output data
-        mean_line_values = flux_matrix.mean(axis=0)
-        std_line_values = flux_matrix.std(axis=0)
-        median_line_values = np.median(flux_matrix, axis=0)
-        p16th_line_values = np.percentile(flux_matrix, 16, axis=0)
-        p84th_line_values = np.percentile(flux_matrix, 84, axis=0)
+        flux_matrix = np.array([traces_dict[lineLabel] for lineLabel in input_lines])
+        mean_line_values = flux_matrix.mean(axis=1)
+        std_line_values = flux_matrix.std(axis=1)
+        median_line_values = np.median(flux_matrix, axis=1)
+        p16th_line_values = np.percentile(flux_matrix, 16, axis=1)
+        p84th_line_values = np.percentile(flux_matrix, 84, axis=1)
 
         # Array wih true error values for flux
         diff_Percentage = np.round((1 - (median_line_values / inFlux)) * 100, 2)
         diff_Percentage = list(map(str, diff_Percentage))
 
-        ion_array, wave_array, latexLabel_array = label_decomposition(modelLineLabels, combined_dict=combined_dict)
+        ion_array, wave_array, latexLabel_array = label_decomposition(input_lines, combined_dict=combined_dict)
 
         for i in range(inFlux.size):
 
             # label = label_formatting(inputLabels[i])
+            flux_obs = r'${:0.3}\pm{:0.3}$'.format(inFlux[i], inErr[i])
 
-            row_i = [latexLabel_array[i], inFlux[i], mean_line_values[i], std_line_values[i], median_line_values[i], p16th_line_values[i],
-                     p84th_line_values[i], diff_Percentage[i]]
+            row_i = [latexLabel_array[i], flux_obs, mean_line_values[i], std_line_values[i], median_line_values[i],
+                     p16th_line_values[i], p84th_line_values[i], diff_Percentage[i]]
 
-            self.addTableRow(row_i, last_row=False if modelLineLabels[-1] != modelLineLabels[i] else True)
-            tableDF.loc[modelLineLabels[i]] = row_i[1:]
-
-        self.generate_pdf(table_address)
-
-        # Save the table as a dataframe.
-        with open(str(table_address) + '.txt', 'wb') as output_file:
-            string_DF = tableDF.to_string()
-            output_file.write(string_DF.encode('UTF-8'))
-
-
-    def table_line_fluxes(self, table_address, db_dict, combined_dict={}, file_type='table'):
-
-        # Table headers
-        headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
-                   r'$84^{th}$ $percentil$', r'$Difference\,\%$']
-
-        # Create containers
-        tableDF = pd.DataFrame(columns=headers[1:])
-        self.create_pdfDoc(pdf_type=file_type)
-        self.pdf_insert_table(headers)
-
-        # Input data
-        inputLabels = db_dict['Input_data']['lineLabels_list']
-        inFlux, inErr = db_dict['Input_data']['inputFlux_array'], db_dict['Input_data']['inputErr_array']
-
-        # Output data
-        flux_matrix = db_dict['trace']['calcFluxes_Op']
-        mean_line_values = flux_matrix.mean(axis=0)
-        std_line_values = flux_matrix.std(axis=0)
-        median_line_values = np.median(flux_matrix, axis=0)
-        p16th_line_values = np.percentile(flux_matrix, 16, axis=0)
-        p84th_line_values = np.percentile(flux_matrix, 84, axis=0)
-
-        # Array wih true error values for flux
-        diff_Percentage = np.round((1 - (median_line_values / inFlux)) * 100, 2)
-        diff_Percentage = list(map(str, diff_Percentage))
-
-        ion_array, wave_array, latexLabel_array = label_decomposition(inputLabels, combined_dict=combined_dict)
-
-        for i in range(inFlux.size):
-
-            # label = label_formatting(inputLabels[i])
-
-            row_i = [latexLabel_array[i], inFlux[i], mean_line_values[i], std_line_values[i], median_line_values[i], p16th_line_values[i],
-                     p84th_line_values[i], diff_Percentage[i]]
-
-            self.addTableRow(row_i, last_row=False if inputLabels[-1] != inputLabels[i] else True)
-            tableDF.loc[inputLabels[i]] = row_i[1:]
+            self.addTableRow(row_i, last_row=False if input_lines[-1] != input_lines[i] else True)
+            tableDF.loc[input_lines[i]] = row_i[1:]
 
         self.generate_pdf(table_address)
 

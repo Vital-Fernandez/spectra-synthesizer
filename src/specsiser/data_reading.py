@@ -9,6 +9,7 @@ from scipy.interpolate import interp1d
 from distutils.util import strtobool
 from collections import Sequence
 from pathlib import Path
+from astropy.io import fits
 from data_printing import int_to_roman, label_decomposition
 
 __all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
@@ -113,7 +114,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
     elif ',' in entry_value:
 
         # Specia cases conversion
-        if key_label == 'input_lines':
+        if key_label in ['input_lines']:
             if entry_value == 'all':
                 output_variable = 'all'
             else:
@@ -616,36 +617,51 @@ def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
 
 
 # Function to restore PYMC3 simulations using pickle
-def load_MC_fitting(output_address):
+def load_MC_fitting(output_address, ext_name='', output_format='pickle'):
+
+    #TODO make this a class
 
     db_address = Path(output_address)
 
-    # Output dictionary with the results
-    fit_results = {}
+    # Configuration file (traces are not restored)
+    if output_format == 'cfg':
+        fit_results = loadConfData(db_address)
 
-    # Restore the pymc output file
-    with open(db_address, 'rb') as trace_restored:
-        db = pickle.load(trace_restored)
+    # Pickle file (Pymc3 is restored alongside formated inputs and outputs)
+    if output_format == 'pickle':
+        with open(db_address, 'rb') as trace_restored:
+            fit_results = pickle.load(trace_restored)
 
-    model_reference, trace = db['model'], db['trace']
-    fit_results.update(db)
-
-    # params_dict = {}
-    # for parameter in trace.varnames:
-    #     if ('_log__' not in parameter) and ('interval' not in parameter):
-    #         params_dict[parameter] = trace[parameter]
-    # fit_results['parameters'] = params_dict
-
-    # Restore the input data file
-    configFileAddress = db_address.with_suffix('.txt')
-    output_dict = loadConfData(configFileAddress, group_variables=False)
-
-    for key in ['Input_data', 'Fitting_results', 'Simulation_fluxes']:
-        if key in output_dict:
-            fit_results[key] = output_dict[key]
-
-    # fit_results['Input_data'] = output_dict['Input_data']
-    # fit_results['Fitting_results'] = output_dict['Fitting_results']
-    # fit_results['Simulation_fluxes'] = output_dict['Simulation_fluxes']
+    # Fits file
+    if output_format == 'fits':
+        fit_results = {}
+        with fits.open(db_address) as hdul:
+            for i, sec in enumerate(['inputs', 'outputs', 'traces']):
+                sec_label = sec if ext_name == '' else f'{ext_name}_{sec}'
+                fit_results[sec_label] = [hdul[i + 1].data, hdul[i + 1].header]
 
     return fit_results
+
+# def load_MC_fitting(output_address):
+#
+#     db_address = Path(output_address)
+#
+#     # Output dictionary with the results
+#     fit_results = {}
+#
+#     # Restore the pymc output file
+#     with open(db_address, 'rb') as trace_restored:
+#         db = pickle.load(trace_restored)
+#
+#     model_reference, trace = db['model'], db['trace']
+#     fit_results.update(db)
+#
+#     # Restore the input data file
+#     configFileAddress = db_address.with_suffix('.txt')
+#     output_dict = loadConfData(configFileAddress, group_variables=False)
+#
+#     for key in ['Input_data', 'Fitting_results', 'Simulation_fluxes']:
+#         if key in output_dict:
+#             fit_results[key] = output_dict[key]
+#
+#     return fit_results
