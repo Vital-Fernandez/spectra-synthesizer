@@ -5,7 +5,7 @@ import numpy as np
 import pickle
 from pathlib import Path
 from data_reading import parseConfDict
-from data_printing import MCOutputDisplay
+from data_printing import MCOutputDisplay, label_decomposition
 from physical_model.gasEmission_functions import storeValueInTensor
 from physical_model.chemical_model import TOIII_from_TSIII_relation, TSIII_from_TOIII_relation, TOII_from_TOIII_relation
 from physical_model.gasEmission_functions import assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
@@ -64,6 +64,11 @@ def fits_db(fits_address, model_db, ext_name='', header=None):
         hdr_dict[f'hierarch {lineLabel}'] = model_db['inputs']['line_fluxes'][i_line]
         hdr_dict[f'hierarch {lineLabel}_err'] = model_db['inputs']['line_err'][i_line]
 
+    # User values:
+    for key, value in header.items():
+        if key not in ['logP_values', 'r_hat']:
+            hdr_dict[f'hierarch {key}'] = value
+
     # Inputs extension
     cols = fits.ColDefs(list_columns)
     sec_label = 'inputs' if ext_name == '' else f'{ext_name}_inputs'
@@ -106,13 +111,22 @@ def fits_db(fits_address, model_db, ext_name='', header=None):
 
     # ---------------------------------- traces data
     list_columns = []
+
+    # Data
     for param, trace_array in params_traces.items():
         col_trace = fits.Column(name=param, format='E', array=params_traces[param])
         list_columns.append(col_trace)
 
     cols = fits.ColDefs(list_columns)
+
+    # Header fitting properties
+    hdr_dict = {}
+    for stats_dict in ['logP_values', 'r_hat']:
+        for key, value in header[stats_dict].items():
+            hdr_dict[f'hierarch {key}_{stats_dict}'] = value
+
     sec_label = 'traces' if ext_name == '' else f'{ext_name}_traces'
-    hdu_traces = fits.BinTableHDU.from_columns(cols, name=sec_label)
+    hdu_traces = fits.BinTableHDU.from_columns(cols, name=sec_label, header=fits.Header(hdr_dict))
 
     # ---------------------------------- Save fits files
     hdu_list = [hdu_inputs, hdu_outputs, hdu_traces]
@@ -162,19 +176,24 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         self.total_regions = 1
         self.fit_results = None
 
-    def define_region(self, objLinesDF, ion_model=None, extinction_model=None, chemistry_model=None, minErr=0.02,
-                      normLine='H1_4861A'):
+    def define_region(self, line_labels, line_fluxes, line_errs=None, ion_model=None, extinction_model=None,
+                      chemistry_model=None, minErr=0.02, normLine='H1_4861A'):
 
         # Lines data
-        normLine = normLine if ion_model is None else ion_model.normLine
-        idcs_lines = (objLinesDF.index != normLine)
-        self.lineLabels = objLinesDF.loc[idcs_lines].index.values
-        self.lineIons = objLinesDF.loc[idcs_lines].ion.values
-        self.emissionFluxes = objLinesDF.loc[idcs_lines].intg_flux.values
-        self.emissionErr = objLinesDF.loc[idcs_lines].intg_err.values
+        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels)
+        self.lineLabels = line_labels
+        self.lineIons = ion_array
+        self.emissionFluxes = line_fluxes
+        self.emissionErr = line_errs if line_errs is not None else line_fluxes * minErr
+
+        # normLine = normLine if ion_model is None else ion_model.normLine
+        # self.lineLabels = objLinesDF.loc[idcs_lines].index.values
+        # self.lineIons = objLinesDF.loc[idcs_lines].ion.values
+        # self.emissionFluxes = objLinesDF.loc[idcs_lines].intg_flux.values
+        # self.emissionErr = objLinesDF.loc[idcs_lines].intg_err.values
 
         if extinction_model is not None:
-            self.lineFlambda = extinction_model.gasExtincParams(wave=objLinesDF.loc[idcs_lines].obsWave.values)
+            self.lineFlambda = extinction_model.gasExtincParams(wave=wave_array)
 
         # Emissivity data
         if ion_model is not None:
@@ -185,7 +204,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         if chemistry_model is not None:
             self.emtt = EmissionFluxModel(self.lineLabels, self.lineIons)
             self.obsIons = chemistry_model.obsAtoms
-            self.idcs_highTemp_ions = chemistry_model.indcsHighTemp[idcs_lines]
+            self.idcs_highTemp_ions = chemistry_model.indcsHighTemp # TODO this is dangerous repeat out
 
         # Establish minimum error on lines
         if minErr is not None:
@@ -258,11 +277,11 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         elif probDist.__name__ == 'Uniform':
             # priorFunc = probDist(param, lower=dist_loc, upper=dist_scale) * dist_norm + dist_reLoc
             if param == 'logOH':
-                priorFunc = pymc3.Bound(pymc3.Normal, lower=7.1, upper=9.1)('logOH', mu=8.0, sigma=1.0)
+                priorFunc = pymc3.Bound(pymc3.Normal, lower=7.1, upper=9.1)('logOH', mu=8.0, sigma=1.0, testval=8.1)
             if param == 'logU':
-                priorFunc = pymc3.Bound(pymc3.Normal, lower=-4.0, upper=-1.5)('logU', mu=-2.75, sigma=1.5)
+                priorFunc = pymc3.Bound(pymc3.Normal, lower=-4.0, upper=-1.5)('logU', mu=-2.75, sigma=1.5, testval=-2.75)
             if param == 'logNO':
-                priorFunc = pymc3.Bound(pymc3.Normal, lower=-2.0, upper=0.0)('logNO', mu=-1.0, sigma=0.5)
+                priorFunc = pymc3.Bound(pymc3.Normal, lower=-2.0, upper=0.0)('logNO', mu=-1.0, sigma=0.5, testval=-1.0)
         else:
             priorFunc = probDist(param, dist_norm, dist_scale, shape=self.total_regions) * dist_norm + dist_reLoc
 
@@ -341,16 +360,21 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                                   axis=-1)
 
             for i in linesRangeArray:
+
                 # Declare line properties
                 lineLabel = self.lineLabels[i]
-                # lineFlambda = self.lineFlambda[i]
+                lineFlambda = self.lineFlambda[i]
 
-                # Line Flux
-                lineInt = self.gridInterp[lineLabel](grid_coord)[0][0]
+                if lineLabel != 'H1_6563A':
+
+                    # Line Flux
+                    lineInt = self.gridInterp[lineLabel](grid_coord)[0][0]
+
+                else:
+                    lineInt = 0.47129
 
                 # Line Intensity
-                # lineFlux = lineInt - cHbeta * lineFlambda
-                lineFlux = lineInt
+                lineFlux = lineInt - self.paramDict['cHbeta'] * lineFlambda
                 pymc3.Deterministic(linesTensorLabels[i], lineFlux)
 
                 # Inference
@@ -365,9 +389,6 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         # Container to store the synthetic line fluxes
         self.paramDict = {}  # FIXME do I need this one for loop inferences
-
-        # for i, line_i in enumerate(obj1_model.lineLabels):
-        #     print(f'{i} {line_i} {obj1_model.lineIons[i]}: {obj1_model.emissionFluxes[i]}, {obj1_model.lineFlambda[i]}')
 
         # Define observable input
         fluxTensor = tt.zeros(self.lineLabels.size)
@@ -484,11 +505,11 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def run_sampler(self, iterations, tuning, nchains=2, njobs=2):
+    def run_sampler(self, iterations, tuning, nchains=2, njobs=2, init='auto'):
 
         # ---------------------------- Launch model
         print('\n- Launching sampler')
-        trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel)
+        trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel, init=init)
 
         #  ---------------------------- Treat traces and store outputs
         model_params = []
@@ -499,7 +520,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
             # Exclude pymc3 variables
             if ('_log__' not in param) and ('interval' not in param):
 
-                trace_array = trace[param]
+                trace_array = np.squeeze(trace[param]) # TODO why is this squeeze necesary...
 
                 # Restore prior parametrisation
                 if param in self.priorDict:
@@ -521,7 +542,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                     trace_array = np.power(10, trace_array)
 
                     if param == 'calcFluxes_Op':  # Flux matrix case
-                        for i in range(trace_array.shape[0]):
+                        for i in range(trace_array.shape[1]):
                             output_dict[self.lineLabels[i]] = trace_array[:, i]
                         trace.add_values({'calcFluxes_Op': trace_array}, overwrite=True)
                     else:  # Individual line
@@ -545,7 +566,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         return
 
-    def save_fit(self, output_address, ext_name='', output_format='pickle', user_header=None):
+    def save_fit(self, output_address, ext_name='', output_format='pickle', user_header={}):
 
         if output_format == 'cfg':
 
@@ -580,5 +601,7 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
                 pickle.dump(self.fit_results, db_pickle)
 
         if output_format == 'fits':
+            user_header['logP_values'] = dict(self.inferenModel.check_test_point())
+            user_header['r_hat'] = dict(pymc3.summary(self.fit_results['trace'])['r_hat'])
             fits_db(output_address, model_db=self.fit_results, ext_name=ext_name, header=user_header)
 

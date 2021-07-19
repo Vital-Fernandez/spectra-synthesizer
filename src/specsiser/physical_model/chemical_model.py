@@ -266,7 +266,7 @@ class ElementAbundances:
 
 class DirectMethod(ElementAbundances):
 
-    def __init__(self, linesDF=None, highTempIons=None):
+    def __init__(self, line_labels=None, highTempIons=None):
 
         ElementAbundances.__init__(self)
 
@@ -276,30 +276,29 @@ class DirectMethod(ElementAbundances):
         self.indcsHighTemp = None
         self.ionicAbundCheck = {}
 
-        if linesDF is not None:
-            self.label_ion_features(linesDF, highTempIons)
+        if line_labels is not None:
+            self.label_ion_features(line_labels, highTempIons)
 
-    def label_ion_features(self, linesDF, highTempIons=None):
+    def label_ion_features(self, line_labels, highTempIons=None):
 
-        lineLabels = linesDF.index.values
-        lineIons = linesDF.ion.values
+        ion_array, wavelength_array, latexLabel_array = label_decomposition(line_labels)
 
         # Establish the ions from the available lines
-        self.obsAtoms = np.unique(linesDF.ion.values)
+        self.obsAtoms = np.unique(ion_array)
 
         # Determine the line indeces
-        for line in lineLabels:
-            self.indcsLabelLines[line] = (lineLabels == line)
+        for line in line_labels:
+            self.indcsLabelLines[line] = (line_labels == line)
 
         # Determine the lines belonging to observed ions
         for ion in self.obsAtoms:
-            self.indcsIonLines[ion] = (lineIons == ion)
+            self.indcsIonLines[ion] = (ion_array == ion)
 
         # Establish index of lines which below to high and low ionization zones # TODO increase flexibility for more Te
         if highTempIons is not None:
-            self.indcsHighTemp = np.in1d(lineIons, highTempIons)
+            self.indcsHighTemp = np.in1d(ion_array, highTempIons)
         else:
-            self.indcsHighTemp = np.zeros(lineLabels.size, dtype=bool)
+            self.indcsHighTemp = np.zeros(line_labels.size, dtype=bool)
 
         # Establish the ionic abundance logic from the available lines
         for ion in self.obsAtoms:

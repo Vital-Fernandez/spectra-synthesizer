@@ -114,6 +114,7 @@ class EmissivitySurfaceFitter:
         return
 
 
+# TODO undo class and move methods to data reading
 class IonEmissivity(EmissivitySurfaceFitter):
 
     def __init__(self, atomic_references=None, tempGrid=None, denGrid=None):
@@ -174,12 +175,9 @@ class IonEmissivity(EmissivitySurfaceFitter):
                     print(f'-- Warning: No emissivity coefficients available for line {line}')
         return
 
-    def computeEmissivityGrids(self, linesDF, ionDict, grids_folder=None, load_grids=False, normLine='H1_4861A', combined_dict={}):
+    def computeEmissivityGrids(self, line_labels, ionDict, grids_folder=None, load_grids=False, normLine='H1_4861A', combined_dict={}):
 
-        labels_list = linesDF.index.values
-        ions_list = linesDF.ion.values
-        waves = linesDF.wavelength.values
-        # blended_list = linesDF.blended.values
+        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels)
 
         # Generate a grid with the default reference line
         if normLine == 'H1_4861A':
@@ -188,7 +186,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
             Hbeta_emis_grid = ionDict['H1'].getEmissivity(self.tempRange, self.denRange, wave=wave_line)
 
         self.emisGridDict = {}
-        for i, line_label in enumerate(labels_list):
+        for i, line_label in enumerate(line_labels):
 
             # Line emissivity references
             if (grids_folder is not None) and load_grids:
@@ -198,14 +196,14 @@ class IonEmissivity(EmissivitySurfaceFitter):
             else:
                 # Single line:
                 if ('_m' not in line_label) and ('_b' not in line_label):
-                    emis_grid_i = ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=waves[i])
+                    emis_grid_i = ionDict[ion_array[i]].getEmissivity(self.tempRange, self.denRange, wave=wave_array[i])
 
                 # Blended line
                 else:
                     emis_grid_i = np.zeros(Hbeta_emis_grid.shape)
                     for component in combined_dict[line_label].split('-'):
                         ion, wave, latex_label = label_decomposition(component, scalar_output=True)
-                        emis_grid_i += ionDict[ions_list[i]].getEmissivity(self.tempRange, self.denRange, wave=wave)
+                        emis_grid_i += ionDict[ion_array[i]].getEmissivity(self.tempRange, self.denRange, wave=wave)
 
                 if grids_folder is not None:
                     np.save(grids_folder, emis_grid_i)

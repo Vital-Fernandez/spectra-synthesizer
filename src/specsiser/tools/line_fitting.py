@@ -183,20 +183,6 @@ class EmissionFitting:
             self.z_line = self.peak_wave / theoWave_arr[0] - 1.0
             ref_wave = np.array([self.peak_wave], ndmin=1)
 
-        # # Import data from previous lines
-        # if f'{line_label}_kinem' in user_conf:
-        #     parent_line = user_conf[f'{line_label}_kinem']
-        #     if parent_line in lines_df.index:
-        #         ion_parent, wave_parent, latexLabel_parent = label_decomposition(parent_line, scalar_output=True)
-        #         for param_ext in ('center', 'sigma'):
-        #             param_label = f'{line_label}_{param_ext}'
-        #             parent_value = lines_df.loc[parent_line, KIN_LABEL_CONVERSION[param_ext]]
-        #             if param_label in user_conf:
-        #                 print(f'-- WARNING: {param_label} overwritten by {parent_line} kinematics')
-        #             user_conf[param_label] = {'value': theoWave_arr/wave_parent * parent_value, 'vary': False}
-        #     else:
-        #         print(f'-- WARNING: {parent_line} has not been measured. Its kinematics were not copied to {line_label}')
-
         # Define fitting params for each component
         fit_model = Model(linear_model)
         for idx_comp, comp in enumerate(mixtureComponents):

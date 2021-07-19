@@ -3,7 +3,7 @@ import theano.tensor as tt
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.specsiser.physical_model.line_tools import EmissionFitting, gauss_func
+from src.specsiser.physical_model.line_tools import EmissionFluxModel EmissionFitting, gauss_func
 from matplotlib import pyplot as plt, rcParams
 
 

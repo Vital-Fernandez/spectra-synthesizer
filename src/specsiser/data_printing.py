@@ -86,10 +86,34 @@ latex_labels = {'y_plus': r'$y^{+}$',
              'logNO': r'$log(N/O)$',
              'Teff': r'$T_{eff}$',
              'X_i+': r'$X^{i+}$',
-             'log(X_i+)': r'$12+log\left(X^{i+}\right)$'}
+             'log(X_i+)': r'$12+log\left(X^{i+}\right)$',
+             'redNoise': r'$\Delta(cH\beta)$'}
 
 VAL_LIST = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
 SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]
+
+
+background_color = np.array((43, 43, 43))/255.0
+foreground_color = np.array((179, 199, 216))/255.0
+red_color = np.array((43, 43, 43))/255.0
+yellow_color = np.array((191, 144, 0))/255.0
+
+DARK_PLOT = {'figure.figsize': (14, 7),
+             'axes.titlesize': 14,
+             'axes.labelsize': 14,
+             'legend.fontsize': 12,
+             'xtick.labelsize': 12,
+             'ytick.labelsize': 12,
+             'text.color': foreground_color,
+             'figure.facecolor': background_color,
+             'axes.facecolor': background_color,
+             'axes.edgecolor': foreground_color,
+             'axes.labelcolor': foreground_color,
+             'xtick.color': foreground_color,
+             'ytick.color': foreground_color,
+             'legend.edgecolor': 'inherit',
+             'legend.facecolor': 'inherit'}
+
 
 def label_formatting(line_label):
     label = line_label.replace('_', '\,\,')
@@ -110,7 +134,7 @@ def int_to_roman(num):
     return roman_num
 
 
-def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_dict={}, scalar_output=False):
+def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_dict={}, scalar_output=False, user_format={}):
 
     # Confirm input array has one dimension
     input_lines = np.array(input_lines, ndmin=1)
@@ -119,69 +143,72 @@ def label_decomposition(input_lines, recombAtoms=('H1', 'He1', 'He2'), combined_
     ion_dict, wave_dict, latexLabel_dict = {}, {}, {}
 
     for lineLabel in input_lines:
-
-        # Check if line reference corresponds to blended component
-        mixture_line = False
-        if '_b' in lineLabel or '_m' in lineLabel:
-            mixture_line = True
-            if lineLabel in combined_dict:
-                lineRef = combined_dict[lineLabel]
-            else:
-                lineRef = lineLabel[:-2]
-        else:
-            lineRef = lineLabel
-
-        # Split the components if they exists
-        lineComponents = lineRef.split('-')
-
-        # Decomponse each component
-        latexLabel = ''
-        for line_i in lineComponents:
-
-            # Get ion:
-            if 'r_' in line_i: # Case recombination lines
-                ion = line_i[0:line_i.find('_')-1]
-            else:
-                ion = line_i[0:line_i.find('_')]
-
-            # Get wavelength and their units # TODO add more units and more facilities for extensions
-            ext_n = line_i.count('_')
-            if (line_i.endswith('A')) or (ext_n > 1):
-                wavelength = line_i[line_i.find('_') + 1:line_i.rfind('A')]
-                units = '\AA'
-                ext = f'-{line_i[line_i.rfind("_")+1:]}' if ext_n > 1 else ''
-            else:
-                wavelength = line_i[line_i.find('_') + 1:]
-                units = ''
-                ext = ''
-
-            # Get classical ion notation
-            atom, ionization = ion[:-1], int(ion[-1])
-            ionizationRoman = int_to_roman(ionization)
-
-            # Define the label
-            if ion in recombAtoms:
-                comp_Label = wavelength + units + '\,' + atom + ionizationRoman + ext
-            else:
-                comp_Label = wavelength + units + '\,' + '[' + atom + ionizationRoman + ']' + ext
-
-            # In the case of a mixture line we take the first entry as the reference
-            if mixture_line:
-                if len(latexLabel) == 0:
-                    ion_dict[lineRef] = ion
-                    wave_dict[lineRef] = float(wavelength)
-                    latexLabel += comp_Label
+        if lineLabel not in user_format:
+            # Check if line reference corresponds to blended component
+            mixture_line = False
+            if '_b' in lineLabel or '_m' in lineLabel:
+                mixture_line = True
+                if lineLabel in combined_dict:
+                    lineRef = combined_dict[lineLabel]
                 else:
-                    latexLabel += '+' + comp_Label
-
-            # This logic will expand the blended lines, but the output list will be larger than the input one
+                    lineRef = lineLabel[:-2]
             else:
-                ion_dict[line_i] = ion
-                wave_dict[line_i] = float(wavelength)
-                latexLabel_dict[line_i] = '$'+comp_Label+'$'
+                lineRef = lineLabel
 
-        if mixture_line:
-            latexLabel_dict[lineRef] = '$'+latexLabel +'$'
+            # Split the components if they exists
+            lineComponents = lineRef.split('-')
+
+            # Decomponse each component
+            latexLabel = ''
+            for line_i in lineComponents:
+
+                # Get ion:
+                if 'r_' in line_i: # Case recombination lines
+                    ion = line_i[0:line_i.find('_')-1]
+                else:
+                    ion = line_i[0:line_i.find('_')]
+
+                # Get wavelength and their units # TODO add more units and more facilities for extensions
+                ext_n = line_i.count('_')
+                if (line_i.endswith('A')) or (ext_n > 1):
+                    wavelength = line_i[line_i.find('_') + 1:line_i.rfind('A')]
+                    units = '\AA'
+                    ext = f'-{line_i[line_i.rfind("_")+1:]}' if ext_n > 1 else ''
+                else:
+                    wavelength = line_i[line_i.find('_') + 1:]
+                    units = ''
+                    ext = ''
+
+                # Get classical ion notation
+                atom, ionization = ion[:-1], int(ion[-1])
+                ionizationRoman = int_to_roman(ionization)
+
+                # Define the label
+                if ion in recombAtoms:
+                    comp_Label = wavelength + units + '\,' + atom + ionizationRoman + ext
+                else:
+                    comp_Label = wavelength + units + '\,' + '[' + atom + ionizationRoman + ']' + ext
+
+                # In the case of a mixture line we take the first entry as the reference
+                if mixture_line:
+                    if len(latexLabel) == 0:
+                        ion_dict[lineRef] = ion
+                        wave_dict[lineRef] = float(wavelength)
+                        latexLabel += comp_Label
+                    else:
+                        latexLabel += '+' + comp_Label
+
+                # This logic will expand the blended lines, but the output list will be larger than the input one
+                else:
+                    ion_dict[line_i] = ion
+                    wave_dict[line_i] = float(wavelength)
+                    latexLabel_dict[line_i] = '$'+comp_Label+'$'
+
+            if mixture_line:
+                latexLabel_dict[lineRef] = '$'+latexLabel +'$'
+
+        else:
+            ion_dict[lineLabel], wave_dict[lineLabel], latexLabel_dict[lineLabel] = user_format[lineLabel]
 
     # Convert to arrays
     label_array = np.array([*ion_dict.keys()], ndmin=1)
@@ -851,13 +878,13 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                     # Nominal value and uncertainty
                     if isinstance(value_param, (list, tuple, np.ndarray)):
                         nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
-                        axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
+                        axPoterior.axvline(x=nominal_value, color='black', linestyle='solid')
                         axPoterior.axvspan(nominal_value - std_value, nominal_value + std_value, alpha=0.5, color=cmap(colorNorm(i)))
 
                     # Nominal value only
                     else:
                         nominal_value = value_param
-                        axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
+                        axPoterior.axvline(x=nominal_value, color='black', linestyle='solid')
 
             # Add legend
             axTrace.legend(loc=7)
@@ -1074,10 +1101,11 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             self.legend_conf(self.Axis[i], loc=2)
 
     def fluxes_distribution(self, plot_address, input_lines, inFlux, inErr, trace_dict, n_columns=8, combined_dict={},
-                            plot_conf={}):
+                            plot_conf={}, user_labels={}):
 
         # Input data
-        ion_array, wave_array, latexLabel_array = label_decomposition(input_lines, combined_dict=combined_dict)
+        ion_array, wave_array, latexLabel_array = label_decomposition(input_lines, combined_dict=combined_dict,
+                                                                      user_format=user_labels)
 
         # Declare plot grid size
         n_lines = len(input_lines)
@@ -1274,11 +1302,11 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                     value_param = true_values[param]
                     if isinstance(value_param, (list, tuple, np.ndarray)):
                         true_value = r'${}$ $\pm${}'.format(value_param[0], value_param[1])
-                        perDif = str(np.round((1 - (value_param[0] / median)) * 100, 2))
+                        perDif = str(np.round((1 - (value_param[0] / mean_value)) * 100, 2))
 
                     else:
                         true_value = value_param
-                        perDif = str(np.round((1 - (true_value / median)) * 100, 2))
+                        perDif = str(np.round((1 - (true_value / mean_value)) * 100, 2))
 
                 row_i = [label, true_value, mean_value, std, n_traces, median, p_16th, p_84th, perDif]
 
@@ -1297,7 +1325,8 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def table_line_fluxes(self, table_address, input_lines, inFlux, inErr, traces_dict, combined_dict={}, file_type='table'):
+    def table_line_fluxes(self, table_address, input_lines, inFlux, inErr, traces_dict, combined_dict={}, file_type='table',
+                          user_labels={}):
 
         # Table headers
         headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
@@ -1320,7 +1349,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         diff_Percentage = np.round((1 - (median_line_values / inFlux)) * 100, 2)
         diff_Percentage = list(map(str, diff_Percentage))
 
-        ion_array, wave_array, latexLabel_array = label_decomposition(input_lines, combined_dict=combined_dict)
+        ion_array, wave_array, latexLabel_array = label_decomposition(input_lines, combined_dict=combined_dict, user_format=user_labels)
 
         for i in range(inFlux.size):
 

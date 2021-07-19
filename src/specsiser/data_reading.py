@@ -89,7 +89,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
         output_variable = None
 
     # Dictionary blended lines
-    elif '_line_fitting' in section_label:
+    elif 'line_fitting' in section_label:
         output_variable = {}
         keys_and_values = entry_value.split(',')
         for pair in keys_and_values:
@@ -582,11 +582,6 @@ def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=
     if include_lines is not None:
         idx_includeLines = ~(outputDF.index.isin(include_lines))
         outputDF.drop(index=outputDF.loc[idx_includeLines].index.values, inplace=True)
-
-    # If wavelengths are provided for the observation we use them, else we use the theoretical values
-    if 'obsWave' not in outputDF.columns:
-        outputDF['obsWave'] = outputDF.wavelength
-    outputDF.sort_values(by=['obsWave'], ascending=True, inplace=True)
 
     # Trim with exclude lines
     if exclude_lines is not None:

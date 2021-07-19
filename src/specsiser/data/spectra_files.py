@@ -105,11 +105,17 @@ def import_fits_data(file_address, instrument, frame_idx=None):
 
         # Following the steps at: https://archive.eso.org/cms/eso-data/help/1dspectra.html
         with astrofits.open(file_address) as hdul:
-            data, header = hdul[1].data, hdul[1].header
+            data, header = hdul[frame_idx].data, hdul[frame_idx].header
 
-        wave = data[0][0]
+        w_min = header['CRVAL1']
+        dw = header['CDELT1']  # dw (Wavelength interval per pixel)
+        pixels = header['NAXIS1']  # nw number of output pixels
+        w_max = w_min + dw * pixels
+        wave = np.linspace(w_min, w_max, pixels, endpoint=False)
 
-        return wave, data[0], header
+        # wave = data[0][0]
+
+        return wave, data, header
 
     else:
 

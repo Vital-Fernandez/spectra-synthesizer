@@ -49,17 +49,15 @@ for n_obj in range(n_objs):
                                                                         combined_dict=merged_lines)
 
     # Define a pandas dataframe to contain the lines data
-    linesLogHeaders = ['wavelength', 'obsFlux', 'obsFluxErr', 'ion', 'blended_label', 'latexLabel']
-    objLinesDF = pd.DataFrame(index = objParams['input_lines'], columns=linesLogHeaders)
-    objLinesDF['ion'] = ion_array
-    objLinesDF['wavelength'] = wavelength_array
-    objLinesDF['latexLabel'] = latexLabel_array
+    linesLogHeaders = ['wavelength', 'intg_flux', 'intg_err', 'ion', 'blended_label', 'latexLabel']
+    objLinesDF = pd.DataFrame(index=objParams['input_lines'], columns=linesLogHeaders)
+    objLinesDF = objLinesDF.assign(wavelength=wavelength_array, ion=ion_array, latexLabel=latexLabel_array,
+                                   blended_label='None')
+    objLinesDF.sort_values(by=['wavelength'], ascending=True, inplace=True)
 
-    objLinesDF['blended_label'] = 'None'
+    # Blended labels
     idcs_blended = objLinesDF.index.isin(merged_lines.keys())
     objLinesDF.loc[idcs_blended, 'blended_label'] = list(merged_lines.values())
-
-    objLinesDF.sort_values(by=['wavelength'], ascending=True, inplace=True)
 
     # Declare extinction properties
     objRed = sr.ExtinctionModel(Rv=objParams['simulation_properties']['R_v'],
@@ -92,10 +90,6 @@ for n_obj in range(n_objs):
 
     # Compile exoplanet interpolator functions so they can be used wit numpy
     emisGridInterpFun = sr.gridInterpolatorFunction(objIons.emisGridDict, objIons.tempRange, objIons.denRange)
-    # gw = sr.ModelGridWrapper()
-    # model_variables = ['Te', 'ne']
-    # axes_cords_a = dict(Te=objIons.tempRange, ne=objIons.denRange)
-    # emisGridInterpFun = gw.generate_xo_interpolators(objIons.emisGridDict, model_variables, axes_cords_a, interp_type='point')
 
     # Compute the emission line fluxess
     lineLogFluxes = np.empty(len(objLinesDF))
@@ -132,8 +126,8 @@ for n_obj in range(n_objs):
 
     # Convert to a natural scale
     lineFluxes = np.power(10, lineLogFluxes)
-    objLinesDF['obsFlux'] = lineFluxes
-    objLinesDF['obsFluxErr'] = lineFluxes * objParams['simulation_properties']['lines_minimum_error']
+    objLinesDF['intg_flux'] = lineFluxes
+    objLinesDF['intg_err'] = lineFluxes * objParams['simulation_properties']['lines_minimum_error']
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
     print(f'- Saving synthetic observation at: {user_folder}')

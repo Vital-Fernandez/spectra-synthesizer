@@ -437,8 +437,15 @@ class LineMesurer(EmissionFitting):
                         if param_label_child in user_conf:
                             print(f'-- WARNING: {param_label_child} overwritten by {parent_label} kinematics in configuration input')
 
-                        # Case we want to copy from previous line
-                        if not self.blended_check:
+                        # Case where parent and child are in blended group
+                        if parent_label in childs_list:
+                            param_label_parent = f'{parent_label}_{param_ext}'
+                            param_expr_parent = f'{wtheo_child / wtheo_parent:0.8f}*{param_label_parent}'
+
+                            user_conf[param_label_child] = {'expr': param_expr_parent}
+
+                        # Case we want to copy from previously measured line
+                        else:
                             mu_parent = self.linesDF.loc[parent_label, ['center', 'center_err']].values
                             sigma_parent = self.linesDF.loc[parent_label, ['sigma_vel', 'sigma_err']].values
 
@@ -449,13 +456,6 @@ class LineMesurer(EmissionFitting):
 
                             user_conf[param_label_child] = {'value': param_value[0], 'vary': False}
                             user_conf[f'{param_label_child}_err'] = {'value': param_value[1], 'vary': False}
-
-                        # Case where parent and child are in blended group
-                        else:
-                            param_label_parent = f'{parent_label}_{param_ext}'
-                            param_expr_parent = f'{wtheo_child / wtheo_parent:0.8f}*{param_label_parent}'
-
-                            user_conf[param_label_child] = {'expr': param_expr_parent}
 
         return
 
@@ -648,11 +648,14 @@ class LineMesurer(EmissionFitting):
         fig, ax = plt.subplots()
 
         # Plot the spectrum
-        ax.step(self.wave_rest, self.flux, label=specLabel)
+        if 'text.color' in plotConf:  # TODO implement better switch between white and black themes
+            ax.step(self.wave_rest, self.flux, label=specLabel, color=plotConf['text.color'])
+        else:
+            ax.step(self.wave_rest, self.flux, label=specLabel)
 
         # Plot the continuum if available
         if continuumFlux is not None:
-            ax.step(self.wave_rest, continuumFlux, label='Error Continuum', linestyle=':')
+            ax.step(self.wave_rest, continuumFlux, label='Sigma Continuum', linestyle=':')
 
         # Plot astropy detected lines if available
         if obsLinesTable is not None:
@@ -688,7 +691,9 @@ class LineMesurer(EmissionFitting):
         if self.normFlux != 1:
             if 'ylabel' not in axConf:
                 y_label = STANDARD_AXES['ylabel']
-                axConf['ylabel'] = y_label.replace('Flux', r'$Flux\,/\,{}$'.format(latex_science_float(self.normFlux)))
+                if self.normFlux != 1.0:
+                    norm_label = y_label + r' $\,/\,{}$'.format(latex_science_float(self.normFlux))
+                    axConf['ylabel'] = norm_label
 
         ax.update({**STANDARD_AXES, **axConf})
         ax.legend()
@@ -798,7 +803,6 @@ class LineMesurer(EmissionFitting):
             ax[1].step(x_in/z_cor, residual*z_cor, where='mid')
 
             label = r'$\sigma_{Continuum}/\overline{F(linear)}$'
-            print('Sigma', self.std_cont, 'norm_sigma', self.std_cont / self.cont)
             y_low, y_high = -self.std_cont / self.cont, self.std_cont / self.cont
             ax[1].fill_between(x_in/z_cor, y_low*z_cor, y_high*z_cor, facecolor='tab:orange', alpha=0.5, label=label)
 
@@ -1016,7 +1020,6 @@ class LineMesurer(EmissionFitting):
         else:
 
             # Proceed to measurment
-
             idcsContLeft = (self.lineWaves[0] <= self.wave_rest) & (self.wave_rest <= self.lineWaves[1])
             idcsContRight = (self.lineWaves[4] <= self.wave_rest) & (self.wave_rest <= self.lineWaves[5])
             idcsLinePeak = (lineWave - limitPeak <= self.wave_rest) & (self.wave_rest <= lineWave + limitPeak)
