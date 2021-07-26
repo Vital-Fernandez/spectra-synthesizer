@@ -3,7 +3,7 @@ import theano.tensor as tt
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.specsiser.physical_model.line_tools import EmissionFluxModel EmissionFitting, gauss_func
+from src.specsiser.tools.line_measure import LineMesurer, lineslogFile_to_DF
 from matplotlib import pyplot as plt, rcParams
 
 
@@ -13,14 +13,14 @@ def mixture_density_mult(w, mu, sd, x):
 
 
 # Line treatment object
-lm = EmissionFitting()
+lm = LineMesurer()
 
 # Declare data
 data_folder, data_file = Path('C:/Users/Vital/OneDrive/Desktop/'), 'test_spec2.txt'
 file_to_open = data_folder / data_file
 linesLogAdress = data_folder / data_file.replace('.txt', '_linesLog.txt')
 linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsiser/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
-linesDF = lm.load_lineslog(linesLogAdress)
+linesDF = lm.lineslogFile_to_DF(linesLogAdress)
 
 # Load spectrum
 factor = 1e17

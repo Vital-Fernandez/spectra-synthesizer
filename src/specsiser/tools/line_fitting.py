@@ -6,6 +6,7 @@ from scipy import stats, optimize
 
 c_KMpS = 299792.458  # Speed of light in Km/s (https://en.wikipedia.org/wiki/Speed_of_light)
 
+k_GaussArea = np.sqrt(2 * np.pi)
 
 def wavelength_to_vel(delta_lambda, lambda_wave, light_speed=c_KMpS):
     return light_speed * (delta_lambda/lambda_wave)
@@ -177,10 +178,8 @@ class EmissionFitting:
         # Compute the line redshift and reference wavelength
         if self.blended_check:
             ion_ref, theoWave_ref, latexLabel_ref = label_decomposition(line_label, scalar_output=True)
-            self.z_line = self.peak_wave / theoWave_ref - 1.0
             ref_wave = theoWave_arr * (1 + z_obj)
         else:
-            self.z_line = self.peak_wave / theoWave_arr[0] - 1.0
             ref_wave = np.array([self.peak_wave], ndmin=1)
 
         # Define fitting params for each component
@@ -217,6 +216,7 @@ class EmissionFitting:
         self.v_r, self.v_r_err = np.empty(n_comps), np.empty(n_comps)
         self.sigma_vel, self.sigma_vel_err = np.empty(n_comps), np.empty(n_comps)
         self.gauss_flux, self.gauss_err = np.empty(n_comps), np.empty(n_comps)
+        self.z_line = np.empty(n_comps)
 
         # Store lmfit measurements
         for i, line in enumerate(mixtureComponents):
@@ -229,13 +229,20 @@ class EmissionFitting:
                 term_err = getattr(self, f'{param}_err')
                 term_err[i] = param_fit.stderr
 
+                # Case with error propagation
+                if (term_err[i] == 0) and (f'{line}_{param}_err' in user_conf):
+                    term_err[i] = user_conf[f'{line}_{param}_err']
+
+            # Compute line location
+            self.z_line[i] = self.center[i]/theoWave_arr[i] - 1
+
             # Gaussian area
             lineArea = self.fit_output.params[f'{line}_area']
             # TODO we need a robest mechanic to express the uncertainty in the N2_6548A and similar lines
             if line != 'N2_6548A':
                 self.gauss_flux[i], self.gauss_err[i] = lineArea.value, lineArea.stderr
             elif (lineArea.stderr == 0) and ('N2_6584A_area' in self.fit_output.params):
-                self.gauss_flux[i], self.gauss_err[i] = lineArea.value, self.fit_output.params['N2_6584A_area'].stderr / 2.5066282746
+                self.gauss_flux[i], self.gauss_err[i] = lineArea.value, self.fit_output.params['N2_6584A_area'].stderr/k_GaussArea
             else:
                 self.gauss_flux[i], self.gauss_err[i] = lineArea.value, lineArea.stderr
 
@@ -243,11 +250,14 @@ class EmissionFitting:
             if self.blended_check:
                 eqw_g[i], eqwErr_g[i] = self.gauss_flux[i] / self.cont, self.gauss_err[i] / self.cont
 
+
+
+
             # Kinematics
-            self.v_r[i] = wavelength_to_vel(self.center[i] - theoWave_arr[i], theoWave_arr[i])
-            self.v_r_err[i] = np.abs(wavelength_to_vel(self.center_err[i], theoWave_arr[i]))
-            self.sigma_vel[i] = wavelength_to_vel(self.sigma[i], theoWave_arr[i])
-            self.sigma_vel_err[i] = wavelength_to_vel(self.sigma_err[i], theoWave_arr[i])
+            self.v_r[i] = c_KMpS * (self.center[i] - theoWave_arr[i])/theoWave_arr[i]                                   # wavelength_to_vel(self.center[i] - theoWave_arr[i], theoWave_arr[i])#self.v_r[i] =
+            self.v_r_err[i] = c_KMpS * (self.center_err[i])/theoWave_arr[i]                                             # np.abs(wavelength_to_vel(self.center_err[i], theoWave_arr[i]))
+            self.sigma_vel[i] = c_KMpS * self.sigma[i]/theoWave_arr[i]                                                  # wavelength_to_vel(self.sigma[i], theoWave_arr[i])
+            self.sigma_vel_err[i] = c_KMpS * self.sigma_err[i]/theoWave_arr[i]                                          # wavelength_to_vel(self.sigma_err[i], theoWave_arr[i])
 
         if self.blended_check:
             self.eqw, self.eqw_err = eqw_g, eqwErr_g
@@ -306,17 +316,6 @@ class EmissionFitting:
             else:
                 if param_conf['value'] is None:
                     param_conf['value'] = param_value
-
-        # # Special case importing kinematics in blended group
-        # if self.blended_check and (f'{line_label}_kinem' in user_conf) and (param_label in ('center', 'sigma')):
-        #     parent_line = user_conf[f'{line_label}_kinem']
-        #     ion_parent, theoWave_parent, latexLabel_parent = label_decomposition(parent_line, scalar_output=True)
-        #     ion_child, theoWave_child, latexLabel_child = label_decomposition(line_label, scalar_output=True)
-        #     parent_param_label = f'{parent_line}_{param_label}'
-        #     param_conf = {'expr': f'{theoWave_child/theoWave_parent:0.8f}*{parent_param_label}'}
-        #
-        #     if param_ref in user_conf:
-        #         print(f'-- WARNING: {line_label} overwritten by {parent_line} kinematics')
 
         # Additional preparation for area parameter
         if '_area' in param_ref:

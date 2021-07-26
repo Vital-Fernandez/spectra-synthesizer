@@ -235,8 +235,8 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
         else:
             self.idx_analysis_lines = np.zeros(self.lineLabels.size)
 
-        self.lowTemp_check = True if T_low_diag in self.lineLabels else False
-        self.highTemp_check = True if T_high_diag in self.lineLabels else False
+        self.lowTemp_check = any(T_low_diag in lineLabel for lineLabel in self.lineLabels)
+        self.highTemp_check = any(T_high_diag in lineLabel for lineLabel in self.lineLabels)
 
         if verbose:
             print(f'\n- Input lines ({self.lineLabels.size})')

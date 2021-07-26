@@ -486,16 +486,18 @@ class PdfPrinter():
                                      'top': '1cm',
                                      'bottom': '2cm'}
         self.table = None
+        self.theme_table = None
 
         # TODO add dictionary with numeric formats for tables depending on the variable
 
-    def create_pdfDoc(self, pdf_type=None, geometry_options=None, document_class=u'article'):
+    def create_pdfDoc(self, pdf_type=None, geometry_options=None, document_class=u'article', theme='white'):
 
         # TODO integrate this into the init
         # Case for a complete .pdf or .tex
         if pdf_type is not None:
 
             self.pdf_type = pdf_type
+            self.theme_table = theme
 
             # Update the geometry if necessary (we coud define a dictionary distinction)
             if pdf_type == 'graphs':
@@ -513,6 +515,11 @@ class PdfPrinter():
 
             # Generate the doc
             self.pdfDoc = Document(documentclass=document_class, geometry_options=self.pdf_geometry_options)
+
+            if theme == 'dark':
+                self.pdfDoc.append(NoEscape('\definecolor{background}{rgb}{0.169, 0.169, 0.169}'))
+                self.pdfDoc.append(NoEscape('\definecolor{foreground}{rgb}{0.702, 0.780, 0.847}'))
+                self.pdfDoc.append(NoEscape(r'\arrayrulecolor{foreground}'))
 
             if pdf_type == 'table':
                 self.pdfDoc.packages.append(Package('preview', options=['active', 'tightpage', ]))
@@ -569,11 +576,25 @@ class PdfPrinter():
                         # self.table.add_row(list(map(str, column_headers)), escape=False, strict=False)
                         output_row = list(map(partial(format_for_table), column_headers))
 
-                        if color_font is not None:
+                        # if color_font is not None:
+                        #     for i, item in enumerate(output_row):
+                        #         output_row[i] = NoEscape(r'\color{{{}}}{}'.format(color_font, item))
+                        #
+                        # if color_background is not None:
+                        #     for i, item in enumerate(output_row):
+                        #         output_row[i] = NoEscape(r'\cellcolor{{{}}}{}'.format(color_background, item))
+
+                        if (color_font is not None) or (self.theme_table != 'white'):
+                            if self.theme_table == 'dark' and color_font is None:
+                                color_font = 'foreground'
+
                             for i, item in enumerate(output_row):
                                 output_row[i] = NoEscape(r'\color{{{}}}{}'.format(color_font, item))
 
-                        if color_background is not None:
+                        if (color_background is not None) or (self.theme_table != 'white'):
+                            if self.theme_table == 'dark' and color_background is None:
+                                color_background = 'background'
+
                             for i, item in enumerate(output_row):
                                 output_row[i] = NoEscape(r'\cellcolor{{{}}}{}'.format(color_background, item))
 
@@ -601,15 +622,6 @@ class PdfPrinter():
                 self.table.add_row(output_row, escape=False, strict=False)
                 if addfinalLine:
                     self.table.add_hline()
-
-
-
-            # self.table = Tabu(table_format)
-            # if column_headers != None:
-            #     self.table.add_hline()
-            #     self.table.add_row(list(map(str, column_headers)), escape=False)
-            #     if addfinalLine:
-            #         self.table.add_hline()
 
         return
 
@@ -647,11 +659,18 @@ class PdfPrinter():
         if row_format == 'auto':
             output_row = list(map(partial(format_for_table, rounddig=rounddig), input_row))
 
-        if color_font is not None:
+        # TODO clean this theming to default values
+        if (color_font is not None) or (self.theme_table != 'white'):
+            if self.theme_table == 'dark' and color_font is None:
+                color_font = 'foreground'
+
             for i, item in enumerate(output_row):
                 output_row[i] = NoEscape(r'\color{{{}}}{}'.format(color_font, item))
 
-        if color_background is not None:
+        if (color_background is not None) or (self.theme_table != 'white'):
+            if self.theme_table == 'dark' and color_background is None:
+                color_background = 'background'
+
             for i, item in enumerate(output_row):
                 output_row[i] = NoEscape(r'\cellcolor{{{}}}{}'.format(color_background, item))
 
@@ -822,7 +841,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def tracesPosteriorPlot(self, plot_address, params_list, traces_dict, true_values=None, plot_conf={}):
+    def tracesPosteriorPlot(self, plot_address, params_list, traces_dict, true_values=None, plot_conf={}, dark_mode=True):
 
         if true_values is not None:
             trace_true_dict = {}
@@ -832,10 +851,15 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         n_traces = len(params_list)
 
         # Plot format
-        size_dict = {'axes.titlesize': 14, 'axes.labelsize': 14, 'legend.fontsize': 10,
-                     'xtick.labelsize': 8, 'ytick.labelsize': 8}
-        size_dict.update(plot_conf)
-        rcParams.update(size_dict)
+        if dark_mode:
+            defaultConf = DARK_PLOT.copy()
+            defaultConf.update(plot_conf)
+            rcParams.update(defaultConf)
+        else:
+            defaultConf = {'axes.titlesize': 14, 'axes.labelsize': 14, 'legend.fontsize': 10,
+                         'xtick.labelsize': 8, 'ytick.labelsize': 8}
+            defaultConf.update(plot_conf)
+        rcParams.update(defaultConf)
 
         fig = plt.figure(figsize=(8, n_traces))
         colorNorm, cmap = self.gen_colorList(0, n_traces)
@@ -982,69 +1006,6 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
         # plt.show()
-
-
-        # # Loop through the parameters and print the traces
-        # for i in range(n_traces):
-        #
-        #     # Creat figure axis
-        #     axTrace = fig.add_subplot(gs[2 * i:2 * (1 + i), :3])
-        #     axPoterior = fig.add_subplot(gs[2 * i:2 * (1 + i), 3])
-        #
-        #     # Current trace
-        #     trace_code = traces[i]
-        #     trace_array = stats_dic[trace_code]
-        #     print(i, trace_code)
-        #
-        #     # Label for the plot
-        #     mean_value = np.mean(stats_dic[trace_code])
-        #     std_dev = np.std(stats_dic[trace_code])
-        #     traceLatexRef = trace_code.replace(region_ext, '')
-        #
-        #     if mean_value > 0.001:
-        #         label = r'{} = ${}$ $\pm${}'.format(latex_labels[traceLatexRef], np.round(mean_value, 4), np.round(std_dev, 4))
-        #     else:
-        #         label = r'{} = ${:.3e}$ $\pm$ {:.3e}'.format(latex_labels[traceLatexRef], mean_value, std_dev)
-        #
-        #     # Plot the traces
-        #     axTrace.plot(trace_array, label=label, color=cmap(colorNorm(i)))
-        #     axTrace.axhline(y=mean_value, color=cmap(colorNorm(i)), linestyle='--')
-        #     axTrace.set_ylabel(latex_labels[traceLatexRef])
-        #
-        #     # Plot the histograms
-        #     axPoterior.hist(trace_array, bins=50, histtype='step', color=cmap(colorNorm(i)), align='left')
-        #
-        #     # Plot the axis as percentile
-        #     median, percentile16th, percentile84th = np.median(trace_array), np.percentile(trace_array, 16), np.percentile(trace_array, 84)
-        #
-        #     # Add true value if available
-        #     if true_values is not None:
-        #         if trace_code in traceTrueValuse:
-        #             value_param = traceTrueValuse[trace_code]
-        #             print(trace_code, value_param)
-        #             if isinstance(value_param, (list, tuple, np.ndarray)):
-        #                 nominal_value, std_value = value_param[0], 0.0 if len(value_param) == 1 else value_param[1]
-        #                 axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
-        #                 axPoterior.axvspan(nominal_value - std_value, nominal_value + std_value, alpha=0.5, color=cmap(colorNorm(i)))
-        #             else:
-        #                 nominal_value = value_param
-        #                 axPoterior.axvline(x=nominal_value, color=cmap(colorNorm(i)), linestyle='solid')
-        #
-        #     # Add legend
-        #     axTrace.legend(loc=7)
-        #
-        #     # Remove ticks and labels
-        #     if i < n_traces - 1:
-        #         axTrace.get_xaxis().set_visible(False)
-        #         axTrace.set_xticks([])
-        #
-        #     axPoterior.yaxis.set_major_formatter(plt.NullFormatter())
-        #     axPoterior.set_yticks([])
-        #
-        #     axPoterior.set_xticks([percentile16th, median, percentile84th])
-        #     axPoterior.set_xticklabels(['',numberStringFormat(median),''])
-        #     axTrace.set_yticks((percentile16th, median, percentile84th))
-        #     axTrace.set_yticklabels((numberStringFormat(percentile16th), '', numberStringFormat(percentile84th)))
 
         return
 
@@ -1267,7 +1228,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
 
         return
 
-    def table_mean_outputs(self, table_address, parameter_list, trace_dict, true_values=None, file_type='table'):
+    def table_mean_outputs(self, table_address, parameter_list, trace_dict, true_values=None, file_type='table', theme='white'):
 
         # Table headers
         headers = ['Parameter', 'Mean', 'Standard deviation', 'Number of points', 'Median',
@@ -1278,7 +1239,7 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             headers.append(r'Difference $\%$')
 
         # Generate containers
-        self.create_pdfDoc(pdf_type=file_type)
+        self.create_pdfDoc(pdf_type=file_type, theme=theme)
         self.pdf_insert_table(headers)
         tableDF = pd.DataFrame(columns=headers[1:])
 
@@ -1326,15 +1287,15 @@ class MCOutputDisplay(FigConf, PdfPrinter):
         return
 
     def table_line_fluxes(self, table_address, input_lines, inFlux, inErr, traces_dict, combined_dict={}, file_type='table',
-                          user_labels={}):
+                          user_labels={}, theme='white'):
 
         # Table headers
-        headers = ['Line', 'Observed flux', 'Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
+        headers = ['Line', 'Observed flux', 'Fit Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
                    r'$84^{th}$ $percentil$', r'$Difference\,\%$']
 
         # Create containers
         tableDF = pd.DataFrame(columns=headers[1:])
-        self.create_pdfDoc(pdf_type=file_type)
+        self.create_pdfDoc(pdf_type=file_type, theme=theme)
         self.pdf_insert_table(headers)
 
         # Output data

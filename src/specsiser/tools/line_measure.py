@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from matplotlib import pyplot as plt, rcParams, spines, gridspec
+from matplotlib import pyplot as plt, rcParams, spines, gridspec, patches
 from scipy import integrate
 
 from lmfit import fit_report
 from lmfit.models import PolynomialModel
 import astropy.units as au
+from scipy.interpolate import interp1d
 from specutils import Spectrum1D, SpectralRegion
 from specutils.manipulation import noise_region_uncertainty
 from specutils.fitting import find_lines_derivative
@@ -15,6 +16,7 @@ from src.specsiser.data_printing import label_decomposition, PdfPrinter
 from src.specsiser.tools.line_fitting import EmissionFitting, gaussian_model, linear_model, c_KMpS
 
 from matplotlib.widgets import SpanSelector
+from data_printing import DARK_PLOT
 
 # Parameters configuration: 0) Normalized by flux, 1) Regions wavelengths, 2) Array variable
 LOG_COLUMNS = {'wavelength': [False, False, True],
@@ -41,7 +43,7 @@ LOG_COLUMNS = {'wavelength': [False, False, True],
                'n_cont': [True, False, False],
                'snr_line': [False, False, False],
                'snr_cont': [False, False, False],
-               'z_line': [False, False, False],
+               'z_line': [False, False, True],
                'amp': [True, False, True],
                'center': [False, False, True],
                'sigma': [False, False, True],
@@ -447,7 +449,7 @@ class LineMesurer(EmissionFitting):
                         # Case we want to copy from previously measured line
                         else:
                             mu_parent = self.linesDF.loc[parent_label, ['center', 'center_err']].values
-                            sigma_parent = self.linesDF.loc[parent_label, ['sigma_vel', 'sigma_err']].values
+                            sigma_parent = self.linesDF.loc[parent_label, ['sigma', 'sigma_err']].values
 
                             if param_ext == 'center':
                                 param_value = wtheo_child / wtheo_parent * (mu_parent / z_cor)
@@ -455,7 +457,7 @@ class LineMesurer(EmissionFitting):
                                 param_value = wtheo_child / wtheo_parent * sigma_parent
 
                             user_conf[param_label_child] = {'value': param_value[0], 'vary': False}
-                            user_conf[f'{param_label_child}_err'] = {'value': param_value[1], 'vary': False}
+                            user_conf[f'{param_label_child}_err'] = param_value[1]
 
         return
 
@@ -639,19 +641,22 @@ class LineMesurer(EmissionFitting):
         return
 
     def plot_spectrum(self, continuumFlux=None, obsLinesTable=None, matchedLinesDF=None, noise_region=None,
-                      log_scale=False, plotConf={}, axConf={}, specLabel='Observed spectrum', output_address=None):
+                      log_scale=False, plotConf={}, axConf={}, specLabel='Observed spectrum', output_address=None,
+                      dark_mode=True):
 
         # Plot Configuration
-        defaultConf = STANDARD_PLOT.copy()
+        if dark_mode:
+            defaultConf = DARK_PLOT.copy()
+            foreground = defaultConf['text.color']
+        else:
+            defaultConf = STANDARD_PLOT.copy()
+            foreground = 'tab:blue'
         defaultConf.update(plotConf)
         rcParams.update(defaultConf)
         fig, ax = plt.subplots()
 
-        # Plot the spectrum
-        if 'text.color' in plotConf:  # TODO implement better switch between white and black themes
-            ax.step(self.wave_rest, self.flux, label=specLabel, color=plotConf['text.color'])
-        else:
-            ax.step(self.wave_rest, self.flux, label=specLabel)
+        # Plot the spectrum # TODO implement better switch between white and black themes
+        ax.step(self.wave_rest, self.flux, label=specLabel, color=foreground)
 
         # Plot the continuum if available
         if continuumFlux is not None:
@@ -710,7 +715,7 @@ class LineMesurer(EmissionFitting):
         return
 
     def plot_fit_components(self, lmfit_output=None, line_label=None, fig_conf={}, ax_conf={}, output_address=None,
-                                  log_scale=False, frame='obs'):
+                                  log_scale=False, frame='rest', dark_mode=True):
 
         # Determine line Label:
         # TODO this function should read from lines log
@@ -719,7 +724,16 @@ class LineMesurer(EmissionFitting):
         ion, wave, latexLabel = label_decomposition(line_label, scalar_output=True)
 
         # Plot Configuration
-        defaultConf = STANDARD_PLOT.copy()
+        if dark_mode:
+            defaultConf = DARK_PLOT.copy()
+            foreground = defaultConf['text.color']
+            color_fit = 'yellow'
+        else:
+            defaultConf = STANDARD_PLOT.copy()
+            foreground = defaultConf['text.color']
+            color_fit = 'tab:blue'
+
+        # Plot Configuration
         defaultConf.update(fig_conf)
         rcParams.update(defaultConf)
 
@@ -742,7 +756,7 @@ class LineMesurer(EmissionFitting):
             wave_plot = self.wave
             flux_plot = self.flux
         elif frame == 'rest':
-            z_cor = 1 + self.z_line
+            z_cor = 1 + self.redshift
             wave_plot = self.wave / z_cor
             flux_plot = self.flux * z_cor
         else:
@@ -757,13 +771,14 @@ class LineMesurer(EmissionFitting):
         idcs_plot = (wave_plot[idcsContBlue][0] - 5 <= wave_plot) & (wave_plot <= wave_plot[idcsContRed][-1] + 5)
 
         # Plot line spectrum
-        ax[0].step(wave_plot[idcs_plot], flux_plot[idcs_plot], label=r'Observed spectrum: {}'.format(latexLabel), where='mid')
+        ax[0].step(wave_plot[idcs_plot], flux_plot[idcs_plot], label=r'Observed spectrum: {}'.format(latexLabel),
+                   where='mid', color=foreground)
         ax[0].scatter(self.peak_wave/z_cor, self.peak_flux*z_cor, color='tab:blue', alpha=0.7)
 
         # Plot selection regions
-        ax[0].fill_between(wave_plot[idcsContBlue], 0, flux_plot[idcsContBlue], facecolor='tab:orange', step='mid', alpha=0.2)
-        ax[0].fill_between(wave_plot[idcsEmis], 0, flux_plot[idcsEmis], facecolor='tab:green', step='mid', alpha=0.2)
-        ax[0].fill_between(wave_plot[idcsContRed], 0, flux_plot[idcsContRed], facecolor='tab:orange', step='mid', alpha=0.2)
+        ax[0].fill_between(wave_plot[idcsContBlue], 0, flux_plot[idcsContBlue], facecolor='tab:orange', step='mid', alpha=0.07)
+        ax[0].fill_between(wave_plot[idcsEmis], 0, flux_plot[idcsEmis], facecolor='tab:green', step='mid', alpha=0.07)
+        ax[0].fill_between(wave_plot[idcsContRed], 0, flux_plot[idcsContRed], facecolor='tab:orange', step='mid', alpha=0.07)
 
         # Axes formatting
         if self.normFlux != 1.0:
@@ -784,8 +799,8 @@ class LineMesurer(EmissionFitting):
             flux_resample = lmfit_output.eval_components(x=wave_resample)
 
             # Plot input data
-            ax[0].scatter(x_in/z_cor, y_in*z_cor, color='tab:red', label='Input data', alpha=0.4)
-            ax[0].plot(x_in/z_cor, lmfit_output.best_fit*z_cor, label='Gaussian fit')
+            # ax[0].scatter(x_in/z_cor, y_in*z_cor, color='tab:red', label='Input data', alpha=0.4)
+            ax[0].plot(x_in/z_cor, lmfit_output.best_fit*z_cor, label='Gaussian fit', color=color_fit, linewidth=0.7)
 
             # Plot individual components
             if not self.blended_check:
@@ -800,17 +815,17 @@ class LineMesurer(EmissionFitting):
 
             # Continuum residual plot:
             residual = (y_in - lmfit_output.best_fit)/self.cont
-            ax[1].step(x_in/z_cor, residual*z_cor, where='mid')
-
-            label = r'$\sigma_{Continuum}/\overline{F(linear)}$'
-            y_low, y_high = -self.std_cont / self.cont, self.std_cont / self.cont
-            ax[1].fill_between(x_in/z_cor, y_low*z_cor, y_high*z_cor, facecolor='tab:orange', alpha=0.5, label=label)
+            ax[1].step(x_in/z_cor, residual*z_cor, where='mid', color=foreground)
 
             # Err residual plot if available:
             if self.errFlux is not None:
-                label = r'$\sigma_{Error}/\overline{F(linear)}$'
+                label = r'$\sigma_{Error}/\overline{F(cont)}$'
                 err_norm = np.sqrt(self.errFlux[idcs_plot])/self.cont
-                ax[1].fill_between(wave_plot[idcs_plot]/z_cor, -err_norm*z_cor, err_norm*z_cor, facecolor='tab:red', alpha=0.5, label=label)
+                ax[1].fill_between(wave_plot[idcs_plot], -err_norm*z_cor, err_norm*z_cor, facecolor='tab:red', alpha=0.5, label=label)
+
+            label = r'$\sigma_{Continuum}/\overline{F(cont)}$'
+            y_low, y_high = -self.std_cont / self.cont, self.std_cont / self.cont
+            ax[1].fill_between(x_in/z_cor, y_low*z_cor, y_high*z_cor, facecolor='yellow', alpha=0.2, label=label)
 
             # Residual plot labeling
             ax[1].set_xlim(ax[0].get_xlim())
@@ -818,6 +833,228 @@ class LineMesurer(EmissionFitting):
             ax[1].legend(loc='upper left')
             ax[1].set_ylabel(r'$\frac{F_{obs}}{F_{fit}} - 1$')
             ax[1].set_xlabel(r'Wavelength $(\AA)$')
+
+        ax[0].legend()
+        ax[0].update(defaultConf)
+
+        if output_address is None:
+            plt.tight_layout()
+            plt.show()
+        else:
+            plt.savefig(output_address, bbox_inches='tight')
+
+        return
+
+    def plot_line_velocity(self, lmfit_output=None, line_label=None, fig_conf={}, ax_conf={}, output_address=None,
+                                  log_scale=False, frame='rest', plot_title='', dark_mode=True):
+
+        # Determine line Label:
+        # TODO this function should read from lines log
+        # TODO this causes issues if vary is false... need a better way to get label
+        line_label = line_label if line_label is not None else self.lineLabel
+        ion, wave, latexLabel = label_decomposition(line_label, scalar_output=True)
+
+        # Plot Configuration
+        if dark_mode:
+            defaultConf = DARK_PLOT.copy()
+            foreground = defaultConf['text.color']
+            background = defaultConf['figure.facecolor']
+            color_fit = 'yellow'
+        else:
+            defaultConf = STANDARD_PLOT.copy()
+            foreground = defaultConf['text.color']
+            background = 'white'
+            color_fit = 'tab:blue'
+
+        # Plot Configuration
+        defaultConf.update(fig_conf)
+        rcParams.update(defaultConf)
+
+        defaultConf = STANDARD_AXES.copy()
+        defaultConf.update(ax_conf)
+
+        # Establish spectrum line and continua regions
+        idcsEmis, idcsContBlue, idcsContRed = self.define_masks(self.wave_rest,
+                                                                self.flux,
+                                                                self.lineWaves,
+                                                                merge_continua=False)
+
+        z_cor = 1
+        vel_plot = c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
+        vel_plot2 = c_KMpS * (self.wave_rest[idcsEmis] - 6563.0) / 6563.0
+        flux_plot = self.flux[idcsEmis]
+        cont_plot = self.m_cont * self.wave[idcsEmis] + self.n_cont
+
+        # Velocity values
+        vel_med = np.median(vel_plot)
+
+        percentile_array = np.zeros(vel_plot.size)
+        target_percentiles = np.array([2, 5, 10, 50, 90, 95, 98])
+        for i_pix in np.arange(vel_plot.size):
+            i_flux = (flux_plot[:i_pix].sum() - cont_plot[:i_pix].sum()) * self.pixelWidth
+            percentile_array[i_pix] = i_flux / self.intg_flux * 100
+        Interpolation = interp1d(percentile_array, vel_plot, kind='slinear')
+        vel_percentiles = Interpolation(target_percentiles)
+
+        # Plot the data
+        fig, ax = plt.subplots()
+        ax = [ax]
+        trans = ax[0].get_xaxis_transform()
+
+        # Plot line spectrum
+        ax[0].step(vel_plot, flux_plot, label=latexLabel, where='mid', color=foreground)
+
+        for i_percentil, percentil in enumerate(target_percentiles):
+            label_plot = r'$v_{{{}}}$'.format(percentil)
+            label_text = None if i_percentil > 0 else r'$v_{Pth}$'
+            ax[0].axvline(x=vel_percentiles[i_percentil], label=label_text, color=foreground, linestyle='dotted', alpha=0.5)
+            ax[0].text(vel_percentiles[i_percentil], 0.80, label_plot, ha='center', va='center',
+                    rotation='vertical', backgroundcolor=background, transform=trans, alpha=0.5)
+
+        ax[0].plot(vel_plot, cont_plot, linestyle='--')
+
+        w80 = vel_percentiles[4]-vel_percentiles[2]
+        label_arrow = r'$w_{{80}}={:0.1f}\,Km/s$'.format(w80)
+        p1 = patches.FancyArrowPatch((vel_percentiles[2], 0.5),
+                                     (vel_percentiles[4], 0.5),
+                                     label=label_arrow,
+                                     arrowstyle='<->',
+                                     color='tab:blue',
+                                     transform=trans,
+                                     mutation_scale=20)
+        ax[0].add_patch(p1)
+
+        # ax.annotate("",
+        #             xy=(vel_percentiles[2], 0.5),
+        #             xytext=(vel_percentiles[4], 0.5),
+        #             arrowprops={'arrowstyle': '<->', 'color': 'C7'},
+        #             label=label_arrow,
+        #             transform=trans) # TODO update matplotlib for propper legend display with annotate
+
+        label_vmed = r'$v_{{med}}={:0.1f}\,Km/s$'.format(vel_med)
+        ax[0].axvline(x=vel_med, color=foreground, label=label_vmed, linestyle='dashed', alpha=0.5)
+
+        label_vmed = r'$v_{{peak}}$'
+        ax[0].axvline(x=0.0, color=foreground, label=label_vmed, alpha=0.5)
+
+
+        # Axes formatting
+        defaultConf['xlabel'] = 'Velocity (Km/s)'
+        if self.normFlux != 1.0:
+            defaultConf['ylabel'] = defaultConf['ylabel'] + " $/{{{0:.2g}}}$".format(self.normFlux)
+
+        defaultConf['title'] = plot_title
+        if log_scale:
+            ax[0].set_yscale('log')
+
+        ax[0].legend()
+        ax[0].update(defaultConf)
+
+        # if output_address is None:
+        #     plt.tight_layout()
+        #     plt.show()
+        # else:
+        #     plt.savefig(output_address, bbox_inches='tight')
+
+        return w80
+
+    def plot_line_velocity_backUp(self, lmfit_output=None, line_label=None, fig_conf={}, ax_conf={}, output_address=None,
+                                  log_scale=False, frame='rest', dark_mode=True):
+
+        # Determine line Label:
+        # TODO this function should read from lines log
+        # TODO this causes issues if vary is false... need a better way to get label
+        line_label = line_label if line_label is not None else self.lineLabel
+        ion, wave, latexLabel = label_decomposition(line_label, scalar_output=True)
+
+        # Plot Configuration
+        if dark_mode:
+            defaultConf = DARK_PLOT.copy()
+            foreground = defaultConf['text.color']
+            background = defaultConf['figure.facecolor']
+            color_fit = 'yellow'
+        else:
+            defaultConf = STANDARD_PLOT.copy()
+            foreground = defaultConf['text.color']
+            background = 'white'
+            color_fit = 'tab:blue'
+
+        # Plot Configuration
+        defaultConf.update(fig_conf)
+        rcParams.update(defaultConf)
+
+        defaultConf = STANDARD_AXES.copy()
+        defaultConf.update(ax_conf)
+
+        # Establish spectrum line and continua regions
+        idcsEmis, idcsContBlue, idcsContRed = self.define_masks(self.wave_rest,
+                                                                self.flux,
+                                                                self.lineWaves,
+                                                                merge_continua=False)
+
+        z_cor = 1
+        vel_plot = c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
+        flux_plot = self.flux[idcsEmis]
+        cont_plot = self.m_cont * self.wave[idcsEmis] + self.n_cont
+
+        # Velocity values
+        vel_med = np.median(vel_plot)
+
+        percentile_array = np.zeros(vel_plot.size)
+        target_percentiles = np.array([2, 5, 10, 50, 90, 95, 98])
+        for i_pix in np.arange(vel_plot.size):
+            i_flux = (flux_plot[:i_pix].sum() - cont_plot[:i_pix].sum()) * self.pixelWidth
+            percentile_array[i_pix] = i_flux / self.intg_flux * 100
+        Interpolation = interp1d(percentile_array, vel_plot, kind='slinear')
+        vel_percentiles = Interpolation(target_percentiles)
+
+        # Plot the data
+        fig, ax = plt.subplots()
+        ax = [ax]
+        trans = ax[0].get_xaxis_transform()
+
+        # Plot line spectrum
+        ax[0].step(vel_plot, flux_plot, label=latexLabel, where='mid', color=foreground)
+
+        for i_percentil, percentil in enumerate(target_percentiles):
+            label_plot = r'$v_{{{}}}$'.format(percentil)
+            label_text = None if i_percentil > 0 else r'$v_{Pth}$'
+            ax[0].axvline(x=vel_percentiles[i_percentil], label=label_text, color=foreground, linestyle='dotted', alpha=0.5)
+            ax[0].text(vel_percentiles[i_percentil], 0.80, label_plot, ha='center', va='center',
+                    rotation='vertical', backgroundcolor=background, transform=trans, alpha=0.5)
+
+        w80 = vel_percentiles[4]-vel_percentiles[2]
+        label_arrow = r'$w_{{80}}={:0.1f}\,Km/s$'.format(w80)
+        p1 = patches.FancyArrowPatch((vel_percentiles[2], 0.5),
+                                     (vel_percentiles[4], 0.5),
+                                     label=label_arrow,
+                                     arrowstyle='<->',
+                                     color='tab:blue',
+                                     transform=trans,
+                                     mutation_scale=20)
+        ax[0].add_patch(p1)
+
+        # ax.annotate("",
+        #             xy=(vel_percentiles[2], 0.5),
+        #             xytext=(vel_percentiles[4], 0.5),
+        #             arrowprops={'arrowstyle': '<->', 'color': 'C7'},
+        #             label=label_arrow,
+        #             transform=trans) # TODO update matplotlib for propper legend display with annotate
+
+        label_vmed = r'$v_{{med}}={:0.1f}\,Km/s$'.format(vel_med)
+        ax[0].axvline(x=vel_med, color=foreground, label=label_vmed, linestyle='dashed', alpha=0.5)
+
+        label_vmed = r'$v_{{peak}}$'
+        ax[0].axvline(x=0.0, color=foreground, label=label_vmed, alpha=0.5)
+
+
+        # Axes formatting
+        defaultConf['xlabel'] = 'Velocity (Km/s)'
+        if self.normFlux != 1.0:
+            defaultConf['ylabel'] = defaultConf['ylabel'] + " $/{{{0:.2g}}}$".format(self.normFlux)
+
+        if log_scale:
+            ax[0].set_yscale('log')
 
         ax[0].legend()
         ax[0].update(defaultConf)
