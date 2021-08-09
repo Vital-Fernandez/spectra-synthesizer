@@ -494,10 +494,11 @@ class PdfPrinter():
 
         # TODO integrate this into the init
         # Case for a complete .pdf or .tex
+        self.theme_table = theme
+
         if pdf_type is not None:
 
             self.pdf_type = pdf_type
-            self.theme_table = theme
 
             # Update the geometry if necessary (we coud define a dictionary distinction)
             if pdf_type == 'graphs':
@@ -1290,13 +1291,16 @@ class MCOutputDisplay(FigConf, PdfPrinter):
                           user_labels={}, theme='white'):
 
         # Table headers
-        headers = ['Line', 'Observed flux', 'Fit Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
+        headers_pdf = ['Line', 'Observed flux', 'Fit Mean', 'Standard deviation', 'Median', r'$16^{th}$ $percentil$',
                    r'$84^{th}$ $percentil$', r'$Difference\,\%$']
 
+        headers_txt = ['Observed_flux', 'Observed_err', 'Fit_Mean', 'Fit_Standard_deviation', 'Median', 'Per_16th',
+                   'Per_84th', 'Percentage_difference']
+
         # Create containers
-        tableDF = pd.DataFrame(columns=headers[1:])
+        tableDF = pd.DataFrame(columns=headers_txt)
         self.create_pdfDoc(pdf_type=file_type, theme=theme)
-        self.pdf_insert_table(headers)
+        self.pdf_insert_table(headers_pdf)
 
         # Output data
         flux_matrix = np.array([traces_dict[lineLabel] for lineLabel in input_lines])
@@ -1320,8 +1324,11 @@ class MCOutputDisplay(FigConf, PdfPrinter):
             row_i = [latexLabel_array[i], flux_obs, mean_line_values[i], std_line_values[i], median_line_values[i],
                      p16th_line_values[i], p84th_line_values[i], diff_Percentage[i]]
 
+            row_txt = [inFlux[i], inErr[i], mean_line_values[i], std_line_values[i], median_line_values[i],
+                     p16th_line_values[i], p84th_line_values[i], diff_Percentage[i]]
+
             self.addTableRow(row_i, last_row=False if input_lines[-1] != input_lines[i] else True)
-            tableDF.loc[input_lines[i]] = row_i[1:]
+            tableDF.loc[input_lines[i]] = row_txt
 
         self.generate_pdf(table_address)
 

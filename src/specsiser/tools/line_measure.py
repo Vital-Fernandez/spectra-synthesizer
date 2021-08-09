@@ -880,8 +880,8 @@ class LineMesurer(EmissionFitting):
                                                                 merge_continua=False)
 
         z_cor = 1
-        vel_plot = c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
-        vel_plot2 = c_KMpS * (self.wave_rest[idcsEmis] - 6563.0) / 6563.0
+        #vel_plot = c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
+        vel_plot = (1 + self.redshift) * c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
         flux_plot = self.flux[idcsEmis]
         cont_plot = self.m_cont * self.wave[idcsEmis] + self.n_cont
 
@@ -950,11 +950,11 @@ class LineMesurer(EmissionFitting):
         ax[0].legend()
         ax[0].update(defaultConf)
 
-        # if output_address is None:
-        #     plt.tight_layout()
-        #     plt.show()
-        # else:
-        #     plt.savefig(output_address, bbox_inches='tight')
+        if output_address is None:
+            plt.tight_layout()
+            plt.show()
+        else:
+            plt.savefig(output_address, bbox_inches='tight')
 
         return w80
 
