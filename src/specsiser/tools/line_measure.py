@@ -6,6 +6,7 @@ from scipy import integrate
 
 from lmfit import fit_report
 from lmfit.models import PolynomialModel
+from astropy.io import fits
 import astropy.units as au
 from scipy.interpolate import interp1d
 from specutils import Spectrum1D, SpectralRegion
@@ -54,6 +55,14 @@ LOG_COLUMNS = {'wavelength': [False, False, True],
                'v_r_err': [False, False, True],
                'sigma_vel': [False, False, True],
                'sigma_vel_err': [False, False, True],
+               'FWHM_int': [False, False, False],
+               'FWHM_g': [False, False, True],
+               'v_med': [False, False, False],
+               'v_50': [False, False, False],
+               'v_5': [False, False, False],
+               'v_10': [False, False, False],
+               'v_90': [False, False, False],
+               'v_95': [False, False, False],
                'observation': [False, False, False],
                'comments': [False, False, False]}
 
@@ -95,6 +104,14 @@ LINELOG_TYPES = {'index': '<U50',
                  'v_r_err': '<f8',
                  'sigma_vel': '<f8',
                  'sigma_err_vel': '<f8',
+                 'FWHM_int': '<f8',
+                 'FWHM_g': '<f8',
+                 'v_med': '<f8',
+                 'v_50': '<f8',
+                 'v_5': '<f8',
+                 'v_10': '<f8',
+                 'v_90': '<f8',
+                 'v_95': '<f8',
                  'observation': '<U50',
                  'comments': '<U50',
                  'obsFlux': '<f8',
@@ -248,6 +265,26 @@ def lineslogFile_to_DF(lineslog_address):
             print(f'- ERROR: Could not open lines log at: {lineslog_address}')
 
     return lineslogDF
+
+
+def lineslog_to_HDU(log_DF, ext_name, column_types={}, header_dict={}):
+
+    if len(column_types) == 0:
+        params_dtype = LINELOG_TYPES
+    else:
+        params_dtype = LINELOG_TYPES.copy()
+        user_dtype = column_types.copy()
+        params_dtype.update(user_dtype)
+
+    linesSA = log_DF.to_records(index=True, column_dtypes=params_dtype, index_dtypes='<U50')
+    linesCol = fits.ColDefs(linesSA)
+    linesHDU = fits.BinTableHDU.from_columns(linesCol, name=ext_name)
+
+    if len(header_dict) != 0:
+        for key, value in header_dict.items():
+            linesHDU.header[key] = value
+
+    return linesHDU
 
 
 def save_lineslog(linesDF, file_address):
@@ -500,7 +537,9 @@ class LineMesurer(EmissionFitting):
         waveObs = self.wave_rest[idcsLinePeak]
 
         # Theoretical wave values
-        waveTheory = theoLineDF.wavelength.values
+        ion_array, waveTheory, latexLabel_array = label_decomposition(theoLineDF.index.values)
+        theoLineDF['wavelength'] = waveTheory
+        # waveTheory = theoLineDF.wavelength.values
 
         # Match the lines with the theoretical emission
         tolerance = np.diff(self.wave_rest).mean() * tol
@@ -522,6 +561,7 @@ class LineMesurer(EmissionFitting):
                     theoLineDF.loc[unknownLineLabel] = newRow
 
             else:
+
                 row_index = theoLineDF.index[theoLineDF.wavelength == waveTheory[idx_array[0][0]]]
                 theoLineDF.loc[row_index, 'observation'] = 'detected'
                 theoLineLabel = row_index[0]
@@ -862,7 +902,7 @@ class LineMesurer(EmissionFitting):
             color_fit = 'yellow'
         else:
             defaultConf = STANDARD_PLOT.copy()
-            foreground = defaultConf['text.color']
+            foreground = 'black'
             background = 'white'
             color_fit = 'tab:blue'
 
@@ -880,21 +920,26 @@ class LineMesurer(EmissionFitting):
                                                                 merge_continua=False)
 
         z_cor = 1
-        #vel_plot = c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
-        vel_plot = (1 + self.redshift) * c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
+        vel_plot = c_KMpS * (self.wave[idcsEmis]-self.peak_wave) / self.peak_wave
         flux_plot = self.flux[idcsEmis]
         cont_plot = self.m_cont * self.wave[idcsEmis] + self.n_cont
 
         # Velocity values
         vel_med = np.median(vel_plot)
 
-        percentile_array = np.zeros(vel_plot.size)
         target_percentiles = np.array([2, 5, 10, 50, 90, 95, 98])
-        for i_pix in np.arange(vel_plot.size):
-            i_flux = (flux_plot[:i_pix].sum() - cont_plot[:i_pix].sum()) * self.pixelWidth
-            percentile_array[i_pix] = i_flux / self.intg_flux * 100
-        Interpolation = interp1d(percentile_array, vel_plot, kind='slinear')
-        vel_percentiles = Interpolation(target_percentiles)
+        percentile_array = np.cumsum(flux_plot-cont_plot) * self.pixelWidth / self.intg_flux * 100
+        percentInterp = interp1d(percentile_array, vel_plot, kind='slinear')
+        vel_percentiles = percentInterp(target_percentiles)
+
+
+        # percentile_array = np.zeros(vel_plot.size)
+        # target_percentiles = np.array([2, 5, 10, 50, 90, 95, 98])
+        # for i_pix in np.arange(vel_plot.size):
+        #     i_flux = (flux_plot[:i_pix].sum() - cont_plot[:i_pix].sum()) * self.pixelWidth
+        #     percentile_array[i_pix] = i_flux / self.intg_flux * 100
+        # Interpolation = interp1d(percentile_array, vel_plot, kind='slinear')
+        # vel_percentiles = Interpolation(target_percentiles)
 
         # Plot the data
         fig, ax = plt.subplots()
@@ -923,13 +968,6 @@ class LineMesurer(EmissionFitting):
                                      transform=trans,
                                      mutation_scale=20)
         ax[0].add_patch(p1)
-
-        # ax.annotate("",
-        #             xy=(vel_percentiles[2], 0.5),
-        #             xytext=(vel_percentiles[4], 0.5),
-        #             arrowprops={'arrowstyle': '<->', 'color': 'C7'},
-        #             label=label_arrow,
-        #             transform=trans) # TODO update matplotlib for propper legend display with annotate
 
         label_vmed = r'$v_{{med}}={:0.1f}\,Km/s$'.format(vel_med)
         ax[0].axvline(x=vel_med, color=foreground, label=label_vmed, linestyle='dashed', alpha=0.5)

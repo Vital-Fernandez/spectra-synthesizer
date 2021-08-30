@@ -14,12 +14,11 @@ def import_fits_data(file_address, instrument, frame_idx=None):
         assert 'ISIS' in header['INSTRUME'], 'Input spectrum instrument '
 
         # William Herschel Telescope ISIS instrument
-        if instrument == 'ISIS':
-            w_min = header['CRVAL1']
-            dw = header['CD1_1']  # dw = 0.862936 INDEF (Wavelength interval per pixel)
-            pixels = header['NAXIS1']  # nw = 3801 number of output pixels
-            w_max = w_min + dw * pixels
-            wave = np.linspace(w_min, w_max, pixels, endpoint=False)
+        w_min = header['CRVAL1']
+        dw = header['CD1_1']  # dw = 0.862936 INDEF (Wavelength interval per pixel)
+        pixels = header['NAXIS1']  # nw = 3801 number of output pixels
+        w_max = w_min + dw * pixels
+        wave = np.linspace(w_min, w_max, pixels, endpoint=False)
 
         return wave, data, header
 
@@ -114,6 +113,24 @@ def import_fits_data(file_address, instrument, frame_idx=None):
         wave = np.linspace(w_min, w_max, pixels, endpoint=False)
 
         # wave = data[0][0]
+
+        return wave, data, header
+
+    elif instrument == 'MEGARA':
+
+        # Default frame index
+        if frame_idx is None:
+            frame_idx = 1
+
+        # Following the steps at: https://archive.eso.org/cms/eso-data/help/1dspectra.html
+        with astrofits.open(file_address) as hdul:
+            data, header = hdul[frame_idx].data, hdul[frame_idx].header
+
+        w_min = header['CRVAL1']
+        dw = header['CDELT1']  # dw (Wavelength interval per pixel)
+        pixels = header['NAXIS1']  # nw number of output pixels
+        w_max = w_min + dw * pixels
+        wave = np.linspace(w_min, w_max, pixels, endpoint=False)
 
         return wave, data, header
 

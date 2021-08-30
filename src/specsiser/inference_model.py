@@ -122,8 +122,9 @@ def fits_db(fits_address, model_db, ext_name='', header=None):
     # Header fitting properties
     hdr_dict = {}
     for stats_dict in ['logP_values', 'r_hat']:
-        for key, value in header[stats_dict].items():
-            hdr_dict[f'hierarch {key}_{stats_dict}'] = value
+        if stats_dict in header:
+            for key, value in header[stats_dict].items():
+                hdr_dict[f'hierarch {key}_{stats_dict}'] = value
 
     sec_label = 'traces' if ext_name == '' else f'{ext_name}_traces'
     hdu_traces = fits.BinTableHDU.from_columns(cols, name=sec_label, header=fits.Header(hdr_dict))
@@ -602,6 +603,6 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         if output_format == 'fits':
             user_header['logP_values'] = dict(self.inferenModel.check_test_point())
-            user_header['r_hat'] = dict(pymc3.summary(self.fit_results['trace'])['r_hat'])
+            # user_header['r_hat'] = dict(pymc3.summary(self.fit_results['trace'])['r_hat']) # TODO check r_hat values
             fits_db(output_address, model_db=self.fit_results, ext_name=ext_name, header=user_header)
 

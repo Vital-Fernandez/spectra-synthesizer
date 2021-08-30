@@ -2,20 +2,26 @@ import numpy as np
 from lmfit.models import PolynomialModel, Model
 from src.specsiser.data_printing import label_decomposition
 from scipy import stats, optimize
+from scipy.interpolate import interp1d
 
 
 c_KMpS = 299792.458  # Speed of light in Km/s (https://en.wikipedia.org/wiki/Speed_of_light)
 
 k_GaussArea = np.sqrt(2 * np.pi)
 
+k_FWHM = 2 * np.sqrt(2 * np.log(2))
+
+TARGET_PERCENTILES = np.array([2, 5, 10, 50, 90, 95, 98])
+
 def wavelength_to_vel(delta_lambda, lambda_wave, light_speed=c_KMpS):
     return light_speed * (delta_lambda/lambda_wave)
 
 
 def iraf_snr(input_y):
-    avg = np.mean(input_y)
-    rms = np.sqrt(np.mean(np.power(input_y - avg, 2)))
-    return avg / rms
+    avg = np.average(input_y)
+    rms = np.sqrt(np.mean(np.square(input_y - avg)))
+    snr = avg/rms
+    return snr
 
 
 def gaussian_model(x, amp, center, sigma):
@@ -84,6 +90,10 @@ class EmissionFitting:
         self.sigma_vel, self.sigma_vel_err = None, None
         self.snr_line, self.snr_cont = None, None
         self.comments = 'None'
+        self.FWHM_int, self.FWHM_g = None, None
+        self.v_med, self.v_50 = None, None
+        self.v_5, self.v_10 = None, None
+        self.v_90, self.v_95 = None, None
 
         self.fit_params, self.fit_output = {}, None
         self.pixelWidth = None
@@ -101,6 +111,7 @@ class EmissionFitting:
         # Emission region
         idcsLineRegion = ((wave_arr[idcsW[:, 2]] <= wave_arr[:, None]) &
                           (wave_arr[:, None] <= wave_arr[idcsW[:, 3]])).squeeze()
+
 
         # Return left and right continua merged in one array
         # TODO add check for wavelengths beyond wavelengh limits
@@ -144,6 +155,28 @@ class EmissionFitting:
         lineFluxMatrix = emisFlux + normalNoise
         areasArray = (lineFluxMatrix.sum(axis=1) - lineLinearCont.sum()) * self.pixelWidth
         self.intg_flux, self.intg_err = areasArray.mean(), areasArray.std()
+
+        # Velocity calculations
+        velocArray = c_KMpS * (emisWave - self.peak_wave)/self.peak_wave
+        percentFluxArray = np.cumsum(emisFlux-lineLinearCont) * self.pixelWidth / self.intg_flux * 100
+        percentInterp = interp1d(percentFluxArray, velocArray, kind='slinear', fill_value='extrapolate')
+        velocPercent = percentInterp(TARGET_PERCENTILES)
+
+        # idcs_FWHM = np.where(emisFlux > self.peak_flux/2)[0]
+        # self.FWHM_int = velocArray[idcs_FWHM[-1]] - velocArray[idcs_FWHM[0]]
+
+        vel_FWHM_blue = velocArray[:peakIdx][np.argmax(emisFlux[:peakIdx] > self.peak_flux/2)]
+        vel_FWHM_red = velocArray[peakIdx:][np.argmax(emisFlux[peakIdx:] < self.peak_flux/2)]
+        self.FWHM_int = vel_FWHM_red - vel_FWHM_blue
+
+        self.v_med, self.v_50 = np.median(velocArray), velocPercent[3]
+        self.v_5, self.v_10 = velocPercent[1], velocPercent[2]
+        self.v_90, self.v_95 = velocPercent[4], velocPercent[5]
+
+        W_80 = self.v_90 - self.v_10
+        W_90 = self.v_95 - self.v_5
+        A = ((self.v_90 - self.v_med) - (self.v_med-self.v_10)) / W_80
+        K = W_90 / (1.397 * self.FWHM_int)
 
         # TODO apply the redshift correction
         # Equivalent width computation
@@ -217,6 +250,7 @@ class EmissionFitting:
         self.sigma_vel, self.sigma_vel_err = np.empty(n_comps), np.empty(n_comps)
         self.gauss_flux, self.gauss_err = np.empty(n_comps), np.empty(n_comps)
         self.z_line = np.empty(n_comps)
+        self.FWHM_g = np.empty(n_comps)
 
         # Store lmfit measurements
         for i, line in enumerate(mixtureComponents):
@@ -250,14 +284,12 @@ class EmissionFitting:
             if self.blended_check:
                 eqw_g[i], eqwErr_g[i] = self.gauss_flux[i] / self.cont, self.gauss_err[i] / self.cont
 
-
-
-
             # Kinematics
-            self.v_r[i] = c_KMpS * (self.center[i] - theoWave_arr[i])/theoWave_arr[i]                                   # wavelength_to_vel(self.center[i] - theoWave_arr[i], theoWave_arr[i])#self.v_r[i] =
-            self.v_r_err[i] = c_KMpS * (self.center_err[i])/theoWave_arr[i]                                             # np.abs(wavelength_to_vel(self.center_err[i], theoWave_arr[i]))
-            self.sigma_vel[i] = c_KMpS * self.sigma[i]/theoWave_arr[i]                                                  # wavelength_to_vel(self.sigma[i], theoWave_arr[i])
-            self.sigma_vel_err[i] = c_KMpS * self.sigma_err[i]/theoWave_arr[i]                                          # wavelength_to_vel(self.sigma_err[i], theoWave_arr[i])
+            self.v_r[i] = c_KMpS * (self.center[i] - self.peak_wave)/self.peak_wave                                   # wavelength_to_vel(self.center[i] - theoWave_arr[i], theoWave_arr[i])#self.v_r[i] =
+            self.v_r_err[i] = c_KMpS * (self.center_err[i])/self.peak_wave                                            # np.abs(wavelength_to_vel(self.center_err[i], theoWave_arr[i]))
+            self.sigma_vel[i] = c_KMpS * self.sigma[i]/self.peak_wave                                               # wavelength_to_vel(self.sigma[i], theoWave_arr[i])
+            self.sigma_vel_err[i] = c_KMpS * self.sigma_err[i]/self.peak_wave                                          # wavelength_to_vel(self.sigma_err[i], theoWave_arr[i])
+            self.FWHM_g[i] = k_FWHM * self.sigma_vel[i]
 
         if self.blended_check:
             self.eqw, self.eqw_err = eqw_g, eqwErr_g
