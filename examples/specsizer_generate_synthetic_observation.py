@@ -143,4 +143,4 @@ for n_obj in range(n_objs):
 
     # Finally we safe a configuration file to fit the spectra afterwards
     synthConfigPath = f'{user_folder}GridEmiss_region{n_obj+1}of{n_objs}_config.txt'
-    sr.safeConfData(synthConfigPath, objParams)
+    sr.safeSpecSizerData(synthConfigPath, objParams)

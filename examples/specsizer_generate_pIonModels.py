@@ -80,4 +80,4 @@ with open(synthLinesLogPath, 'w') as f:
 
 # Finally we safe a configuration file to fit the spectra afterwards
 synthConfigPath = f'{user_folder}Teff_LogU_epmGrids_config.txt'
-sr.safeConfData(synthConfigPath, objParams)
+sr.safeSpecSizerData(synthConfigPath, objParams)

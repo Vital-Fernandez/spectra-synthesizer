@@ -10,10 +10,9 @@ from distutils.util import strtobool
 from collections import Sequence
 from pathlib import Path
 from astropy.io import fits
-from data_printing import int_to_roman, label_decomposition
 
-__all__ = ['loadConfData', 'safeConfData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
-           'parseConfDict', 'parseConfList']
+__all__ = ['loadConfData', 'safeSpecSizerData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
+           'parseConfDict', 'safeConfData']
 
 CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
 STRINGCONFKEYS = ['sampler', 'reddenig_curve', 'norm_line_label', 'norm_line_pynebCode']
@@ -111,7 +110,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
                 output_variable = check_numeric_Value(entry_value)
 
     # Arrays (The last boolean overrides the parameters # TODO unstable in case of one item lists
-    elif ',' in entry_value:
+    elif (',' in entry_value) or ('_array' in key_label) or ('_list' in key_label):
 
         # Specia cases conversion
         if key_label in ['input_lines']:
@@ -136,6 +135,7 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
         else:
             newArray = []
             textArrays = entry_value.split(',')
+            print(key_label, section_label)
             for item in textArrays:
                 convertValue = float(item) if item != 'None' else np.nan
                 newArray.append(convertValue)
@@ -164,8 +164,54 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
     return output_variable
 
 
+def formatStringOutput(value, key, section_label=None, float_format=None, nan_format='nan'):
+
+    # TODO this one should be the default option
+    # TODO add more cases for dicts
+    # Check None entry
+    if value is not None:
+
+        # Check string entry
+        if isinstance(value, str):
+            formatted_value = value
+
+        else:
+
+            # Case of an array
+            scalarVariable = True
+            if isinstance(value, (Sequence, np.ndarray)):
+
+                # Confirm is not a single value array
+                if len(value) == 1:
+                    value = value[0]
+
+                # Case of an array
+                else:
+                    scalarVariable = False
+                    formatted_value = ','.join([str(item) for item in value])
+
+            if scalarVariable:
+
+                # Case single float
+                if isinstance(value, str):
+                    formatted_value = value
+                else:
+                    if np.isnan(value):
+                        formatted_value = nan_format
+                    else:
+                        formatted_value = str(value)
+
+    else:
+        formatted_value = 'None'
+
+    return formatted_value
+
+
 # Function to map variables to strings
 def formatConfEntry(entry_value, float_format=None, nan_format='nan'):
+
+
+    # TODO this one should be replaced by formatStringEntry
     # Check None entry
     if entry_value is not None:
 
@@ -191,6 +237,7 @@ def formatConfEntry(entry_value, float_format=None, nan_format='nan'):
             if scalarVariable:
 
                 # Case single float
+                print(entry_value)
                 if np.isnan(entry_value):
                     formatted_value = nan_format
 
@@ -273,8 +320,81 @@ def loadConfData(filepath, objList_check=False, group_variables=False):
     return confDict
 
 
+
+
+# Function to save a parameter key-value item (or list) into the dictionary
+# TODO make this one the default version
+def safeConfData(output_file, param_dict, section_name=None, clear_section=False):
+
+    """
+    This function safes the input dictionary into a configuration file. If no section is provided the input dictionary
+    overwrites the data
+
+    """
+
+    # Creating a new file (overwritting old if existing)
+    if section_name == None:
+
+        # Check all entries are dictionaries
+        values_list = [*param_dict.values()]
+        section_check = all(isinstance(x, {}) for x in values_list)
+        assert section_check, f'ERROR: Dictionary for {output_file} cannot be converted to configuration file. Confirm all its values are dictionaries'
+
+        output_cfg = configparser.ConfigParser()
+        output_cfg.optionxform = str
+
+        # Loop throught he sections and options to create the files
+        for section_name, options_dict in param_dict.items():
+            output_cfg.add_section(section_name)
+            for option_name, option_value in options_dict.items():
+                option_formatted = formatStringOutput(option_value, option_name, section_name)
+                output_cfg.set(section_name, option_name, option_formatted)
+
+        # Save to a text format
+        with open(output_file, 'w') as f:
+            output_cfg.write(f)
+
+    # Updating old file
+    else:
+
+        # Confirm file exists
+        file_check = os.path.isfile(output_file)
+
+        # Load original cfg
+        if file_check:
+            output_cfg = configparser.ConfigParser()
+            output_cfg.optionxform = str
+            output_cfg.read(output_file)
+        # Create empty cfg
+        else:
+            output_cfg = configparser.ConfigParser()
+            output_cfg.optionxform = str
+
+        # Clear section upon request
+        if clear_section:
+            if output_cfg.has_section(section_name):
+                output_cfg.remove_section(section_name)
+
+        # Add new section if it is not there
+        if not output_cfg.has_section(section_name):
+            output_cfg.add_section(section_name)
+
+        # Map key values to the expected format and store them
+        for option_name, option_value in param_dict.items():
+            option_formatted = formatStringOutput(option_value, option_name, section_name)
+            output_cfg.set(section_name, option_name, option_formatted)
+
+        # Save to a text format
+        with open(output_file, 'w') as f:
+            output_cfg.write(f)
+
+    return
+
+
 # Function to save data to configuration file based on a previous dictionary
-def safeConfData(fileAddress, parametersDict, conf_style_path=None):
+# TODO this one is only use in specsizer generate synthetic
+def safeSpecSizerData(fileAddress, parametersDict, conf_style_path=None):
+
     # Declare the default configuration file and load it
     if conf_style_path is None:
         conf_style_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
@@ -355,34 +475,6 @@ def safeConfData(fileAddress, parametersDict, conf_style_path=None):
 
     # Safe the configuration file
     with open(fileAddress, 'w') as f:
-        output_cfg.write(f)
-
-    return
-
-
-# Function to save a parameter key-value item (or list) into the dictionary
-def parseConfList(output_file, param_key, param_value, section_name):
-    # Check if file exists
-    if os.path.isfile(output_file):
-        output_cfg = configparser.ConfigParser()
-        output_cfg.optionxform = str
-        output_cfg.read(output_file)
-    else:
-        # Create new configuration object
-        output_cfg = configparser.ConfigParser()
-        output_cfg.optionxform = str
-
-    # Map key values to the expected format and store them
-    if isinstance(param_key, (Sequence, np.array)):
-        for i in range(len(param_key)):
-            value_formatted = formatConfEntry(param_value[i])
-            output_cfg.set(section_name, param_key[i], value_formatted)
-    else:
-        value_formatted = formatConfEntry(param_value)
-        output_cfg.set(section_name, param_key, value_formatted)
-
-    # Save the text file data
-    with open(output_file, 'w') as f:
         output_cfg.write(f)
 
     return

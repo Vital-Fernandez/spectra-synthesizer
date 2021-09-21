@@ -5,7 +5,7 @@ import exoplanet as xo
 from inspect import getfullargspec
 from scipy.optimize import curve_fit
 from data_reading import import_optical_depth_coeff_table
-from src.specsiser.data_reading import label_decomposition
+from data_printing import label_decomposition
 
 def compute_emissivity_grid(tempGrid, denGrid):
     tempRange = np.linspace(tempGrid[0], tempGrid[1], tempGrid[2])
