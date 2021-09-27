@@ -135,7 +135,6 @@ def formatStringEntry(entry_value, key_label, section_label='', float_format=Non
         else:
             newArray = []
             textArrays = entry_value.split(',')
-            print(key_label, section_label)
             for item in textArrays:
                 convertValue = float(item) if item != 'None' else np.nan
                 newArray.append(convertValue)
@@ -263,7 +262,7 @@ def check_missing_flux_values(flux):
     return
 
 
-# Function to import SpecSyzer configuration file #TODO repeated
+# Function to import SpecSyzer configuration file
 def loadConfData(filepath, objList_check=False, group_variables=False):
 
     # Open the file
@@ -324,6 +323,7 @@ def loadConfData(filepath, objList_check=False, group_variables=False):
 
 # Function to save a parameter key-value item (or list) into the dictionary
 # TODO make this one the default version
+# TODO add mechanic for commented conf lines. Currently they are being erased in the load/safe process
 def safeConfData(output_file, param_dict, section_name=None, clear_section=False):
 
     """
@@ -384,7 +384,7 @@ def safeConfData(output_file, param_dict, section_name=None, clear_section=False
             option_formatted = formatStringOutput(option_value, option_name, section_name)
             output_cfg.set(section_name, option_name, option_formatted)
 
-        # Save to a text format
+        # Save to a text file
         with open(output_file, 'w') as f:
             output_cfg.write(f)
 
