@@ -4,12 +4,12 @@ import theano.tensor as tt
 import numpy as np
 import pickle
 from pathlib import Path
-from data_reading import parseConfDict
-from data_printing import MCOutputDisplay, label_decomposition
-from physical_model.gasEmission_functions import storeValueInTensor
-from physical_model.chemical_model import TOIII_from_TSIII_relation, TSIII_from_TOIII_relation, TOII_from_TOIII_relation
-from physical_model.gasEmission_functions import assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
-from physical_model.photo_ionization_model import ModelGridWrapper
+from .data_reading import parseConfDict
+from .data_printing import MCOutputDisplay, label_decomposition
+from .physical_model.gasEmission_functions import storeValueInTensor
+from .physical_model.chemical_model import TOIII_from_TSIII_relation, TSIII_from_TOIII_relation, TOII_from_TOIII_relation
+from .physical_model.gasEmission_functions import assignFluxEq2Label, gridInterpolatorFunction, EmissionFluxModel
+from .physical_model.photo_ionization_model import ModelGridWrapper
 from astropy.io import fits
 
 # Disable compute_test_value in theano zeros tensor

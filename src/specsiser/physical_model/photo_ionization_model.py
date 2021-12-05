@@ -1,5 +1,5 @@
 import numpy as np
-from physical_model.gasEmission_functions import gridInterpolatorFunction
+from ..physical_model.gasEmission_functions import gridInterpolatorFunction
 import exoplanet as xo
 
 # Function to read the ionization data
@@ -110,6 +110,8 @@ class ModelGridWrapper:
         for i, ax_name in enumerate(axes_columns):
             axes_cords[ax_name] = np.unique(grid_DF[ax_name].values)
             reshape_array[i] = axes_cords[ax_name].size
+
+
 
         # Declare grid data columns
         if data_columns == 'all':

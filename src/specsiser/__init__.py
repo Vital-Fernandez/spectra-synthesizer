@@ -28,9 +28,9 @@ from .physical_model.atomic_model import IonEmissivity, compute_emissivity_grid
 from .physical_model.chemical_model import DirectMethod, TOIII_from_TSIII_relation
 from .physical_model.gasEmission_functions import EmissionTensors, assignFluxEq2Label,\
     gridInterpolatorFunction, EmissionFluxModel
-from inference_model import SpectraSynthesizer, fits_db
+from .inference_model import SpectraSynthesizer, fits_db
 from .tools.line_measure import LineMesurer, lineslogFile_to_DF, save_lineslog, lineslog_to_HDU
-from data_printing import label_decomposition
+from .data_printing import label_decomposition
 from .data.spectra_files import import_fits_data
 from .print import plot
 from .physical_model.photo_ionization_model import load_ionization_grid, ModelGridWrapper

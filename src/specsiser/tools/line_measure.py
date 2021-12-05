@@ -17,7 +17,7 @@ from src.specsiser.data_printing import label_decomposition, PdfPrinter
 from src.specsiser.tools.line_fitting import EmissionFitting, gaussian_model, linear_model, c_KMpS
 
 from matplotlib.widgets import SpanSelector
-from data_printing import DARK_PLOT
+from ..data_printing import DARK_PLOT
 
 # Parameters configuration: 0) Normalized by flux, 1) Regions wavelengths, 2) Array variable
 LOG_COLUMNS = {'wavelength': [False, False, True],

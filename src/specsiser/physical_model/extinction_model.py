@@ -254,7 +254,7 @@ class ExtinctionModel:
         lineModel = LinearModel()
         y_nom, y_std = unumpy.nominal_values(y_values), unumpy.std_devs(y_values)
         pars = lineModel.make_params(intercept=y_nom.min(), slope=0)
-        output = lineModel.fit(y_nom, pars, x=x_values, weights=1 / np.sqrt(y_std))
+        output = lineModel.fit(y_nom, pars, x=x_values, weights=1/y_std)
         cHbeta, cHbeta_err = output.params['slope'].value, output.params['slope'].stderr
         intercept, intercept_err = output.params['intercept'].value, output.params['intercept'].stderr
 
