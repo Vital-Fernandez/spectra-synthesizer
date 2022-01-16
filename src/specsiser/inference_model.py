@@ -12,6 +12,9 @@ from .physical_model.gasEmission_functions import assignFluxEq2Label, gridInterp
 from .physical_model.photo_ionization_model import ModelGridWrapper
 from astropy.io import fits
 
+from fastprogress import fastprogress
+fastprogress.printing = lambda: True
+
 # Disable compute_test_value in theano zeros tensor
 theano.config.compute_test_value = "ignore"
 
@@ -510,7 +513,8 @@ class SpectraSynthesizer(MCOutputDisplay, ModelGridWrapper):
 
         # ---------------------------- Launch model
         print('\n- Launching sampler')
-        trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel, init=init)
+        trace = pymc3.sample(iterations, tune=tuning, chains=nchains, cores=njobs, model=self.inferenModel, init=init,
+                             progressbar=True)
 
         #  ---------------------------- Treat traces and store outputs
         model_params = []

@@ -4,11 +4,11 @@ import pyneb as pn
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import truncnorm, norm
-from src.specsiser.data_printing import label_decomposition, PdfPrinter, latex_labels
+from src.specsiser.data_printing import PdfPrinter, latex_labels
 from src.specsiser.data_reading import parseConfDict, load_MC_fitting
 import inspect
 from pathlib import Path
-# import numexpr
+from lime import label_decomposition
 
 # Fernandez et al 2018 correction for the S^3+ fraction in the form: # TODO this should be read from a text file
 # log(Ar3/Ar4) = a_S4plus * log(S3/S4) + b_s4plus => logS4 =  (a * logS3 - logAr3 + logAr4 + b) / a

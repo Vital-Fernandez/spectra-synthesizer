@@ -1,10 +1,9 @@
-import os
 import numpy as np
 import pyneb as pn
 import exoplanet as xo
+from lime import label_decomposition
 from inspect import getfullargspec
 from scipy.optimize import curve_fit
-from src.specsiser.data_printing import label_decomposition
 from src.specsiser.data_reading import import_optical_depth_coeff_table
 
 def compute_emissivity_grid(tempGrid, denGrid):
@@ -177,7 +176,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
     def computeEmissivityGrids(self, line_labels, ionDict, grids_folder=None, load_grids=False, normLine='H1_4861A', combined_dict={}):
 
-        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels)
+        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels, combined_dict=combined_dict)
 
         # Generate a grid with the default reference line
         if normLine == 'H1_4861A':

@@ -539,7 +539,8 @@ class PdfPrinter():
                 self.pdfDoc.packages.append(Package('nicefrac'))
                 self.pdfDoc.packages.append(Package('siunitx'))
                 self.pdfDoc.packages.append(Package('makecell'))
-                self.pdfDoc.packages.append(Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+                # self.pdfDoc.packages.append(Package('color', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
+                self.pdfDoc.packages.append(Package('color'))  # Package to crop pdf to a figure
                 self.pdfDoc.packages.append(Package('colortbl', options=['usenames', 'dvipsnames', ]))  # Package to crop pdf to a figure
                 self.pdfDoc.packages.append(Package('xcolor', options=['table']))
 

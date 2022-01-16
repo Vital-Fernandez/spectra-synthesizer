@@ -1,13 +1,15 @@
 import numpy as np
-from pathlib import Path
 import src.specsiser as sr
 from pathlib import Path
+
+from fastprogress import fastprogress
+fastprogress.printing = lambda: True
 
 # Search for the data in the default user folder
 n_objs = 1
 
 # user_folder = os.path.join(os.path.expanduser('~'), 'Documents/Tests_specSyzer/')
-user_folder = Path.home()/'Astro-data/Models/'
+user_folder = Path.home()
 output_db = user_folder/f'GridEmiss_regions{n_objs}_db'
 
 # Declare sampler
@@ -59,12 +61,12 @@ obj1_model.simulation_configuration(objParams['inference_model_configuration']['
                                     photo_ionization_grid=False,
                                     n_regions=n_objs)
 
-# Declare simulation inference model
-obj1_model.inference_model()
-
-# Run the simulation
-obj1_model.run_sampler(1000, 2000, nchains=3, njobs=3)
-obj1_model.save_fit(output_db)
+# # Declare simulation inference model
+# obj1_model.inference_model()
+#
+# # Run the simulation
+# obj1_model.run_sampler(2000, 2000, nchains=1, njobs=1)
+# obj1_model.save_fit(output_db)
 
 # Load the results
 fit_pickle = sr.load_MC_fitting(output_db)
@@ -74,7 +76,7 @@ traces_dict = fit_pickle['outputs']
 
 
 # Print the results
-#TODO make plots independent of obj1_model
+# TODO make plots independent of obj1_model
 print('-- Model parameters table')
 figure_file = user_folder/f'GridEmiss_region{n_objs}_MeanOutputs'
 obj1_model.table_mean_outputs(figure_file, inParameters, traces_dict, true_values=objParams['true_values'])

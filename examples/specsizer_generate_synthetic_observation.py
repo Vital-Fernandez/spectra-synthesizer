@@ -1,11 +1,10 @@
-import os
 import numpy as np
 import pandas as pd
 import src.specsiser as sr
+from pathlib import Path
 
 # Use the default user folder to store the results
-user_folder = os.path.join(os.path.expanduser('~'), 'Astro-data/Models/')
-# user_folder = 'D:\\AstroModels\\'
+user_folder = Path.home()
 
 # Declare whether the observation is a single spectrum or multi-spectra
 n_objs = 1
@@ -43,7 +42,7 @@ for n_obj in range(n_objs):
                    'Ar4_4740A']
 
     # We use the default lines database to generate the synthetic emission lines log for this simulation
-    linesLogPath = os.path.join(sr._literatureDataFolder, sr._default_cfg['data_location']['lines_data_file'])
+    linesLogPath = Path(f'{sr._literatureDataFolder}/{ sr._default_cfg["data_location"]["lines_data_file"]}')
 
     ion_array, wavelength_array, latexLabel_array = sr.label_decomposition(objParams['input_lines'],
                                                                         combined_dict=merged_lines)
@@ -70,20 +69,21 @@ for n_obj in range(n_objs):
     # Establish atomic data references
     objIons = sr.IonEmissivity(tempGrid=objParams['simulation_properties']['temp_grid'],
                                denGrid=objParams['simulation_properties']['den_grid'])
-    ftau_file_path = os.path.join(sr._literatureDataFolder, objParams['data_location']['ftau_file'])
+    ftau_file_path = Path(f'{sr._literatureDataFolder}/{ sr._default_cfg["data_location"]["ftau_file"]}')
     objIons.compute_ftau_grids(ftau_file_path)
 
     # Define the dictionary with the pyneb ion objects
     ionDict = objIons.get_ions_dict(np.unique(objLinesDF.ion.values))
 
     # Compute the emissivity surfaces for the observed emission lines
-    objIons.computeEmissivityGrids(objLinesDF, ionDict, combined_dict=merged_lines)
+    lines_list = objLinesDF.index.values
+    objIons.computeEmissivityGrids(lines_list, ionDict, combined_dict=merged_lines)
 
     # Declare the paradigm for the chemical composition measurement
     objChem = sr.DirectMethod()
 
     # Tag the emission features for the chemical model implementation
-    objChem.label_ion_features(linesDF=objLinesDF, highTempIons=objParams['simulation_properties']['high_temp_ions_list'])
+    objChem.label_ion_features(lines_list, highTempIons=objParams['simulation_properties']['high_temp_ions_list'])
 
     # We generate an object with the tensor emission functions
     emtt = sr.EmissionTensors(objLinesDF.index.values, objLinesDF.ion.values)
@@ -131,7 +131,7 @@ for n_obj in range(n_objs):
 
     # We proceed to safe the synthetic spectrum as if it were a real observation
     print(f'- Saving synthetic observation at: {user_folder}')
-    synthLinesLogPath = f'{user_folder}GridEmiss_region{n_obj+1}of{n_objs}_linesLog.txt'
+    synthLinesLogPath = f'{user_folder}\GridEmiss_region{n_obj+1}of{n_objs}_linesLog.txt'
     print('-- Storing computed line fluxes in:\n--', synthLinesLogPath)
     with open(synthLinesLogPath, 'w') as f:
         f.write(objLinesDF.to_string(index=True, index_names=False))
@@ -142,5 +142,5 @@ for n_obj in range(n_objs):
         objParams['true_values'][param] = np.power(10, objParams['true_values'][param])
 
     # Finally we safe a configuration file to fit the spectra afterwards
-    synthConfigPath = f'{user_folder}GridEmiss_region{n_obj+1}of{n_objs}_config.txt'
+    synthConfigPath = f'{user_folder}\GridEmiss_region{n_obj+1}of{n_objs}_config.txt'
     sr.safeSpecSizerData(synthConfigPath, objParams)
