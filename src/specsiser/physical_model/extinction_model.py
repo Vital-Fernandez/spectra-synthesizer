@@ -26,16 +26,31 @@ class ExtinctionModel:
 
         self.literatureDataFolder = data_folder
 
-    def reddening_correction(self, wave, flux, reddening_curve, cHbeta=None, E_BV=None, R_v=None):
+    def reddening_correction(self, wave, flux, err_flux=None, reddening_curve=None, cHbeta=None, E_BV=None, R_v=None, normWave=4861.331):
 
         # By default we perform the calculation using the colour excess
-        E_BV = E_BV if E_BV is not None else self.Ebv_from_cHbeta(cHbeta, reddening_curve, R_v)
+        if E_BV is not None:
 
-        # Perform reddening correction
-        wavelength_range_Xx = self.reddening_Xx(wave, reddening_curve, R_v)
-        flux_range_derred = flux * np.power(10, 0.4 * wavelength_range_Xx * E_BV)
+            E_BV = E_BV if E_BV is not None else self.Ebv_from_cHbeta(cHbeta, reddening_curve, R_v)
 
-        return flux_range_derred
+            # Perform reddening correction
+            wavelength_range_Xx = self.reddening_Xx(wave, reddening_curve, R_v)
+            int_array = flux * np.power(10, 0.4 * wavelength_range_Xx * E_BV)
+
+        else:
+            lines_flambda = self.gasExtincParams(wave, R_v=R_v, red_curve=reddening_curve, normWave=normWave)
+
+            if np.isscalar(cHbeta):
+                int_array = flux * np.pow(10, cHbeta * lines_flambda)
+
+            else:
+                cHbeta = ufloat(cHbeta[0], cHbeta[1]),
+                obsFlux_uarray = unumpy.uarray(flux, err_flux)
+
+                int_uarray = obsFlux_uarray * unumpy.pow(10, cHbeta * lines_flambda)
+                int_array = (unumpy.nominal_values(int_uarray), unumpy.std_devs(int_uarray))
+
+        return int_array
 
     def Ebv_from_cHbeta(self, cHbeta, reddening_curve, R_v):
 
@@ -194,10 +209,12 @@ class ExtinctionModel:
                         comp_mode='auto', plot_address=False):
 
         # Use all hydrogen lines if none are defined
-        if line_labels == 'all':
-            idcs_H1 = line_df.ion == 'H1'
-            line_labels = line_df.loc[idcs_H1].index.values
-        assert line_labels.size > 0, f'- ERROR: No H1 ion transition lines were found in log. Check dataframe data.'
+        if np.isscalar(line_labels):
+            if line_labels == 'all':
+                idcs_H1 = line_df.ion == 'H1'
+                line_labels = line_df.loc[idcs_H1].index.values
+
+        assert len(line_labels) > 0, f'- ERROR: No H1 ion transition lines were found in log. Check dataframe data.'
 
         # Loop through the input lines
         assert ref_wave in line_df.index, f'- ERROR: {ref_wave} not found in input lines log dataframe for c(Hbeta) calculation'
