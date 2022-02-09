@@ -61,12 +61,12 @@ obj1_model.simulation_configuration(objParams['inference_model_configuration']['
                                     photo_ionization_grid=False,
                                     n_regions=n_objs)
 
-# # Declare simulation inference model
-# obj1_model.inference_model()
-#
-# # Run the simulation
-# obj1_model.run_sampler(2000, 2000, nchains=1, njobs=1)
-# obj1_model.save_fit(output_db)
+# Declare simulation inference model
+obj1_model.inference_model()
+
+# Run the simulation
+obj1_model.run_sampler(2000, 2000, nchains=1, njobs=1)
+obj1_model.save_fit(output_db)
 
 # Load the results
 fit_pickle = sr.load_MC_fitting(output_db)

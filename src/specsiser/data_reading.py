@@ -725,7 +725,7 @@ def load_MC_fitting(output_address, ext_name='', output_format='pickle'):
         with fits.open(db_address) as hdul:
             for i, sec in enumerate(['inputs', 'outputs', 'traces']):
                 sec_label = sec if ext_name == '' else f'{ext_name}_{sec}'
-                fit_results[sec_label] = [hdul[i + 1].data, hdul[i + 1].header]
+                fit_results[sec_label] = [hdul[sec_label].data, hdul[sec_label].header]
 
     return fit_results
 

@@ -176,7 +176,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
     def computeEmissivityGrids(self, line_labels, ionDict, grids_folder=None, load_grids=False, normLine='H1_4861A', combined_dict={}):
 
-        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels, combined_dict=combined_dict)
+        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels, blended_dict=combined_dict)
 
         # Generate a grid with the default reference line
         if normLine == 'H1_4861A':
