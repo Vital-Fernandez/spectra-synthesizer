@@ -5,7 +5,7 @@ import theano.tensor as tt
 import pymc3
 import matplotlib.pyplot as plt
 import arviz as az
-from src.specsiser.inference_model import displaySimulationData
+from src.specsiser.treatment import displaySimulationData
 
 
 # Data folder

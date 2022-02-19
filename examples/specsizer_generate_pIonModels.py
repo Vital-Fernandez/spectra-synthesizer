@@ -2,8 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 import src.specsiser as sr
-from src.specsiser.physical_model.photo_ionization_model import ModelGridWrapper
-from physical_model.gasEmission_functions import gridInterpolatorFunction
+from src.specsiser.components.photo_ionization_model import ModelGridWrapper
+from components.gasEmission_functions import gridInterpolatorFunction
 
 # Use the default user folder to store the results
 user_folder = 'D:\\AstroModels\\'

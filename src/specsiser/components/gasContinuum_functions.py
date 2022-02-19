@@ -73,7 +73,7 @@ class NebularContinua:
         # Use default folder if data if no folder is declared
         if biblio_folder is None:
             _dir_path = os.path.dirname(os.path.realpath(__file__))
-            biblio_folder = os.path.abspath(os.path.join(_dir_path, os.path.join(os.pardir, 'literature_data')))
+            biblio_folder = os.path.abspath(os.path.join(_dir_path, os.path.join(os.pardir, 'database')))
 
         # Load files
         self.HI_fb_dict = importErcolanoTables(os.path.join(biblio_folder, 'HI_t3_elec.ascii'))

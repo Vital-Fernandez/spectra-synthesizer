@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from src.specsiser.physical_model.gasContinuum_functions import NebularContinua
+from src.specsiser.components.gasContinuum_functions import NebularContinua
 
 nebCalculator = NebularContinua()
 

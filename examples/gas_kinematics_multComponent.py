@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 import astropy.io.fits as astrofits
 from pathlib import Path
-from src.specsiser.physical_model.line_tools import EmissionFitting, gauss_func
+from src.specsiser.components.line_tools import EmissionFitting, gauss_func
 from matplotlib import pyplot as plt, rcParams
-from inference_model import displaySimulationData
+from treatment import displaySimulationData
 
 
 def import_fits_data(file_address, frame_idx):
@@ -42,7 +42,7 @@ lm = EmissionFitting()
 # Declare data
 data_folder, data_file = Path('D:/Dropbox/Astrophysics/Data/WHT-Ricardo/'), 'COMBINED_blue.0001.fits'
 file_to_open = data_folder / data_file
-linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsiser/literature_data/lines_data.xlsx') # TODO change to open format to avoid new dependency
+linesFile = Path('D:/Pycharm Projects/spectra-synthesizer/src/specsiser/database/lines_data.xlsx') # TODO change to open format to avoid new dependency
 linesDF = pd.read_excel(linesFile, sheet_name=0, header=0, index_col=0)
 
 # Load spectrum

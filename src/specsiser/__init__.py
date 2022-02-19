@@ -4,9 +4,15 @@ SpecSyzer - python package for spectra synthesis of astronomical bodies
 
 import os
 import sys
-import pandas as pd
 import configparser
+from lime import load_cfg
 
+from .inout import safeConfData, load_fit_results
+from .models import EmissionTensors
+from .components.extinction_model import flambda_calc
+from .grids import GridWrapper
+from .treatment import emissivity_grid_calc, SpectraSynthesizer
+from .plots import plot_traces, plot_flux_grid, plot_corner, table_fluxes, table_params
 
 # Get python version being used
 __python_version__ = sys.version_info
@@ -21,29 +27,7 @@ _setup_cfg.read(os.path.join(setup_path, 'setup.cfg'))
 # Read specsiser version
 __version__ = _setup_cfg['metadata']['version']
 
-# Load package libraries
-from .data_reading import *
-from .physical_model.extinction_model import ExtinctionModel
-from .physical_model.atomic_model import IonEmissivity, compute_emissivity_grid
-from .physical_model.chemical_model import DirectMethod, TOIII_from_TSIII_relation
-from .physical_model.gasEmission_functions import EmissionTensors, assignFluxEq2Label,\
-    gridInterpolatorFunction, EmissionFluxModel
-from .inference_model import SpectraSynthesizer, fits_db
-from .tools.line_measure import LineMesurer, lineslogFile_to_DF, save_lineslog, lineslog_to_HDU
-from .data_printing import label_decomposition
-from .data.spectra_files import import_fits_data
-from .print import plot
-from .physical_model.photo_ionization_model import load_ionization_grid, ModelGridWrapper
-
 # Get default configuration settings
-_default_cfg = loadConfData(os.path.join(_dir_path, 'config.ini'), group_variables=False)
-
-# Declare default data folder
-_literatureDataFolder = os.path.join(_dir_path, _default_cfg['data_location']['external_data_folder'])
-
-# Load library databases
-linesDatabasePath = os.path.join(_literatureDataFolder, _default_cfg['data_location']['lines_data_file'])
-_linesDb = pd.read_excel(linesDatabasePath, sheet_name=0, header=0, index_col=0)
-
+_default_cfg = load_cfg(os.path.join(_dir_path, 'default.cfg'))
 
 

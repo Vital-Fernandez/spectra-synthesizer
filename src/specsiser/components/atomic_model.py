@@ -4,16 +4,7 @@ import exoplanet as xo
 from lime import label_decomposition
 from inspect import getfullargspec
 from scipy.optimize import curve_fit
-from src.specsiser.data_reading import import_optical_depth_coeff_table
-
-def compute_emissivity_grid(tempGrid, denGrid):
-    tempRange = np.linspace(tempGrid[0], tempGrid[1], tempGrid[2])
-    denRange = np.linspace(denGrid[0], denGrid[1], denGrid[2])
-    X, Y = np.meshgrid(tempRange, denRange)
-    tempGridFlatten, denGridFlatten = X.flatten(), Y.flatten()
-
-    return tempGridFlatten, denGridFlatten
-
+from src.specsiser.inout import import_optical_depth_coeff_table
 
 class EmissivitySurfaceFitter:
 
@@ -116,7 +107,7 @@ class EmissivitySurfaceFitter:
 # TODO undo class and move methods to data reading
 class IonEmissivity(EmissivitySurfaceFitter):
 
-    def __init__(self, atomic_references=None, tempGrid=None, denGrid=None):
+    def __init__(self, atomic_references=None, tempGrid=(9000, 20000, 251), denGrid=(1, 600, 101)):
 
         self.emisGridDict = {}
         self.ftau_coeffs = None
@@ -176,7 +167,7 @@ class IonEmissivity(EmissivitySurfaceFitter):
 
     def computeEmissivityGrids(self, line_labels, ionDict, grids_folder=None, load_grids=False, normLine='H1_4861A', combined_dict={}):
 
-        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels, blended_dict=combined_dict)
+        ion_array, wave_array, latexLabel_array = label_decomposition(line_labels, comp_dict=combined_dict)
 
         # Generate a grid with the default reference line
         if normLine == 'H1_4861A':

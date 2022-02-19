@@ -3,12 +3,19 @@ import numpy as np
 import os # TODO update to pathlib only
 import pathlib
 from scipy.interpolate import interp1d
-from src.specsiser.data_printing import label_decomposition
 from uncertainties import unumpy, ufloat
 from lmfit.models import LinearModel
 from matplotlib import pyplot as plt, rcParams
 import mplcursors
+from lime import label_decomposition
 
+def flambda_calc(wave, R_V, red_curve):
+
+    ext_obj = ExtinctionModel(R_V, red_curve)
+
+    f_lambda = ext_obj.gasExtincParams(wave)
+
+    return f_lambda
 
 class ExtinctionModel:
 

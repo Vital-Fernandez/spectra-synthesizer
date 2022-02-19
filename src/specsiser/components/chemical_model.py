@@ -4,8 +4,6 @@ import pyneb as pn
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import truncnorm, norm
-from src.specsiser.data_printing import PdfPrinter, latex_labels
-from src.specsiser.data_reading import parseConfDict, load_MC_fitting
 import inspect
 from pathlib import Path
 from lime import label_decomposition
@@ -36,8 +34,6 @@ def TSIII_from_TOIII_relation(T_high):
 def TOII_from_TOIII_relation(T_high, n_e):
     # From Epm and Cotini 2009
     return ((1.2 + 0.002*n_e + 4.2/n_e) / (10000.0/T_high + 0.08 + 0.003*n_e + 2.5/n_e)) * 10000.0
-
-
 
 
 def pyneb_diag_comp(lineLabels, int_dict):

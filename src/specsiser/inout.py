@@ -10,13 +10,223 @@ from distutils.util import strtobool
 from collections import Sequence
 from pathlib import Path
 from astropy.io import fits
+from pylatex import MultiColumn, MultiRow, utils
+from lime.io import progress_bar
 
-__all__ = ['loadConfData', 'safeSpecSizerData', 'import_emission_line_data', 'save_MC_fitting', 'load_MC_fitting',
-           'parseConfDict', 'safeConfData']
+VAL_LIST = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+SYB_LIST = ["M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I"]
 
-CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
+CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'default.cfg')
 STRINGCONFKEYS = ['sampler', 'reddenig_curve', 'norm_line_label', 'norm_line_pynebCode']
 GLOBAL_LOCAL_GROUPS = ['_line_fitting', '_chemical_model']
+
+FITS_INPUTS_EXTENSION = {'line_list': '20A', 'line_fluxes': 'E', 'line_err': 'E'}
+FITS_OUTPUTS_EXTENSION = {'parameter_list': '20A',
+                          'mean': 'E',
+                          'std': 'E',
+                          'median': 'E',
+                          'p16th': 'E',
+                          'p84th': 'E',
+                          'true': 'E'}
+
+def save_log_maps(log_file_address, param_list, output_folder, mask_file_address=None, ext_mask='all',
+                    ext_log='_INPUTS', default_spaxel_value=np.nan, output_files_prefix=None, page_hdr={}):
+
+    assert Path(log_file_address).is_file(), f'- ERROR: lines log at {log_file_address} not found'
+    assert Path(output_folder).is_dir(), f'- ERROR: Output parameter maps folder {output_folder} not found'
+
+    # Compile the list of voxels to recover the provided masks
+    if mask_file_address is not None:
+
+        assert Path(mask_file_address).is_file(), f'- ERROR: mask file at {mask_file_address} not found'
+
+        with fits.open(mask_file_address) as maskHDUs:
+
+            # Get the list of mask extensions
+            if ext_mask == 'all':
+                if ('PRIMARY' in maskHDUs) and (len(maskHDUs) > 1):
+                    mask_list = []
+                    for i, HDU in enumerate(maskHDUs):
+                        mask_name = HDU.name
+                        if mask_name != 'PRIMARY':
+                            mask_list.append(mask_name)
+                    mask_list = np.array(mask_list)
+                else:
+                    mask_list = np.array(['PRIMARY'])
+            else:
+                mask_list = np.array(ext_mask, ndmin=1)
+
+            # Combine all the mask voxels into one
+            for i, mask_name in enumerate(mask_list):
+                if i == 0:
+                    mask_array = maskHDUs[mask_name].data
+                    image_shape = mask_array.shape
+                else:
+                    assert image_shape == maskHDUs[
+                        mask_name].data.shape, '- ERROR: Input masks do not have the same dimensions'
+                    mask_array += maskHDUs[mask_name].data
+
+            # Convert to boolean
+            mask_array = mask_array.astype(bool)
+
+            # List of spaxels in list [(idx_j, idx_i), ...] format
+            spaxel_list = np.argwhere(mask_array)
+
+    # No mask file is provided and the user just defines an image size tupple (nY, nX)
+    else:
+        exit()
+
+    # Generate containers for the data:
+    images_dict = {}
+    for param in param_list:
+        images_dict[f'{param}'] = np.full(image_shape, default_spaxel_value)
+        images_dict[f'{param}_err'] = np.full(image_shape, default_spaxel_value)
+
+    # Loop through the spaxels and fill the parameter images
+    n_spaxels = spaxel_list.shape[0]
+    spaxel_range = np.arange(n_spaxels)
+
+    with fits.open(log_file_address) as logHDUs:
+
+        for i_spaxel in spaxel_range:
+            idx_j, idx_i = spaxel_list[i_spaxel]
+            spaxel_ref = f'{idx_j}-{idx_i}{ext_log}'
+
+            progress_bar(i_spaxel, n_spaxels, post_text=f'spaxels treated ({n_spaxels})')
+
+            # Confirm log extension exists
+            if spaxel_ref in logHDUs:
+
+                # Recover extension data
+                log_data, log_header = logHDUs[spaxel_ref].data, logHDUs[spaxel_ref].header
+
+                # Loop through the parameters and the lines:
+                for param in param_list:
+                    if param in log_header:
+                        images_dict[f'{param}'][idx_j, idx_i] = log_header[param]
+                        images_dict[f'{param}_err'][idx_j, idx_i] = log_header[f'{param}_err']
+
+    # New line after the rustic progress bar
+    print()
+
+    # Save the parameter maps as individual fits files with one line per page
+    output_files_prefix = '' if output_files_prefix is None else output_files_prefix
+    for param in param_list:
+
+        # Primary header
+        paramHDUs = fits.HDUList()
+        paramHDUs.append(fits.PrimaryHDU())
+
+        # ImageHDU for the parameter maps
+        hdr = fits.Header({'PARAM': param})
+        hdr.update(page_hdr)
+        data = images_dict[f'{param}']
+        paramHDUs.append(fits.ImageHDU(name=param, data=data, header=hdr, ver=1))
+
+        # ImageHDU for the parameter error maps
+        hdr = fits.Header({'PARAMERR': param})
+        hdr.update(page_hdr)
+        data_err = images_dict[f'{param}_err']
+        paramHDUs.append(fits.ImageHDU(name=f'{param}_err', data=data_err, header=hdr, ver=1))
+
+        # Write to new file
+        output_file = Path(output_folder) / f'{output_files_prefix}{param}.fits'
+        paramHDUs.writeto(output_file, overwrite=True, output_verify='fix')
+
+    return
+
+
+def numberStringFormat(value, cifras = 4):
+    if value > 0.001:
+        newFormat = f'{value:.{cifras}f}'
+    else:
+        newFormat = f'{value:.{cifras}e}'
+
+    return newFormat
+
+
+def printSimulationData(model, priorsDict, lineLabels, lineFluxes, lineErr, lineFitErr):
+
+    print('\n- Simulation configuration')
+
+    # Print input lines and fluxes
+    print('\n-- Input lines')
+    for i in range(lineLabels.size):
+        warnLine = '{}'.format('|| WARNING obsLineErr = {:.4f}'.format(lineErr[i]) if lineErr[i] != lineFitErr[i] else '')
+        displayText = '{} flux = {:.4f} +/- {:.4f} || err % = {:.5f} {}'.format(lineLabels[i], lineFluxes[i], lineFitErr[i], lineFitErr[i] / lineFluxes[i], warnLine)
+        print(displayText)
+
+    # Present the model data
+    print('\n-- Priors design:')
+    for prior in priorsDict:
+        displayText = '{} : mu = {}, std = {}'.format(prior, priorsDict[prior][0], priorsDict[prior][1])
+        print(displayText)
+
+    # Check test_values are finite
+    print('\n-- Test points:')
+    model_var = model.test_point
+    for var in model_var:
+        displayText = '{} = {}'.format(var, model_var[var])
+        print(displayText)
+
+    # Checks log probability of random variables
+    print('\n-- Log probability variable:')
+    print(model.check_test_point())
+
+    return
+
+
+def format_for_table(entry, rounddig=4, rounddig_er=2, scientific_notation=False, nan_format='-'):
+
+    if rounddig_er == None: #TODO declare a universal tool
+        rounddig_er = rounddig
+
+    # Check None entry
+    if entry != None:
+
+        # Check string entry
+        if isinstance(entry, (str, bytes)):
+            formatted_entry = entry
+
+        elif isinstance(entry, (MultiColumn, MultiRow, utils.NoEscape)):
+            formatted_entry = entry
+
+        # Case of Numerical entry
+        else:
+
+            # Case of an array
+            scalarVariable = True
+            if isinstance(entry, (Sequence, np.ndarray)):
+
+                # Confirm is not a single value array
+                if len(entry) == 1:
+                    entry = entry[0]
+                # Case of an array
+                else:
+                    scalarVariable = False
+                    formatted_entry = '_'.join(entry)  # we just put all together in a "_' joined string
+
+            # Case single scalar
+            if scalarVariable:
+
+                # Case with error quantified # TODO add uncertainty protocol for table
+                # if isinstance(entry, UFloat):
+                #     formatted_entry = round_sig(nominal_values(entry), rounddig,
+                #                                 scien_notation=scientific_notation) + r'$\pm$' + round_sig(
+                #         std_devs(entry), rounddig_er, scien_notation=scientific_notation)
+
+                # Case single float
+                if np.isnan(entry):
+                    formatted_entry = nan_format
+
+                # Case single float
+                else:
+                    formatted_entry = numberStringFormat(entry, rounddig)
+    else:
+        # None entry is converted to None
+        formatted_entry = 'None'
+
+    return formatted_entry
 
 
 # Function to check if variable can be converte to float else leave as string
@@ -208,8 +418,6 @@ def formatStringOutput(value, key, section_label=None, float_format=None, nan_fo
 
 # Function to map variables to strings
 def formatConfEntry(entry_value, float_format=None, nan_format='nan'):
-
-
     # TODO this one should be replaced by formatStringEntry
     # Check None entry
     if entry_value is not None:
@@ -249,22 +457,8 @@ def formatConfEntry(entry_value, float_format=None, nan_format='nan'):
     return formatted_value
 
 
-# Function to check for nan entries
-def check_missing_flux_values(flux):
-    # Evaluate the nan array
-    nan_idcs = np.isnan(flux)
-    nan_count = np.sum(nan_idcs)
-
-    # Directly save if not nan
-    if nan_count > 0:
-        print('--WARNING: missing flux entries')
-
-    return
-
-
 # Function to import SpecSyzer configuration file
 def loadConfData(filepath, objList_check=False, group_variables=False):
-
     # Open the file
     if Path(filepath).is_file():
         cfg = importConfigFile(filepath)
@@ -319,11 +513,7 @@ def loadConfData(filepath, objList_check=False, group_variables=False):
     return confDict
 
 
-
-
 # Function to save a parameter key-value item (or list) into the dictionary
-# TODO make this one the default version
-# TODO add mechanic for commented conf lines. Currently they are being erased in the load/safe process
 def safeConfData(output_file, param_dict, section_name=None, clear_section=False):
 
     """
@@ -331,13 +521,14 @@ def safeConfData(output_file, param_dict, section_name=None, clear_section=False
     overwrites the data
 
     """
+    # TODO add mechanic for commented conf lines. Currently they are being erased in the load/safe process
 
     # Creating a new file (overwritting old if existing)
     if section_name == None:
 
         # Check all entries are dictionaries
         values_list = [*param_dict.values()]
-        section_check = all(isinstance(x, {}) for x in values_list)
+        section_check = all(isinstance(x, dict) for x in values_list)
         assert section_check, f'ERROR: Dictionary for {output_file} cannot be converted to configuration file. Confirm all its values are dictionaries'
 
         output_cfg = configparser.ConfigParser()
@@ -387,95 +578,6 @@ def safeConfData(output_file, param_dict, section_name=None, clear_section=False
         # Save to a text file
         with open(output_file, 'w') as f:
             output_cfg.write(f)
-
-    return
-
-
-# Function to save data to configuration file based on a previous dictionary
-# TODO this one is only use in specsizer generate synthetic
-def safeSpecSizerData(fileAddress, parametersDict, conf_style_path=None):
-
-    # Declare the default configuration file and load it
-    if conf_style_path is None:
-        conf_style_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config.ini')
-
-    # Check if file exists
-    if os.path.isfile(conf_style_path):
-        _default_cfg = configparser.ConfigParser()
-        _default_cfg.optionxform = str
-        _default_cfg.read(conf_style_path)
-    else:
-        exit(f'--WARNING: Configuration file {conf_style_path} was not found. Exiting program')
-
-    # Create new configuration object
-    output_cfg = configparser.ConfigParser()
-    output_cfg.optionxform = str
-
-    # Loop through the default configuration file sections and options using giving preference to the new data
-    sections_cfg = _default_cfg.sections()
-    for i in range(len(sections_cfg)):
-
-        section = sections_cfg[i]
-
-        options_cfg = _default_cfg.options(sections_cfg[i])
-
-        output_cfg.add_section(section)
-
-        for j in range(len(options_cfg)):
-
-            option = options_cfg[j]
-
-            if options_cfg[j] in parametersDict:
-                value = parametersDict[option]
-            else:
-                value = _default_cfg[section][option]
-
-            value_formatted = formatConfEntry(value)
-
-            # print(f'-- {section} {option} {value} --> {value_formatted}')
-            output_cfg.set(section, option, value_formatted)
-
-    # Additional sections not included by default
-
-    # TODO create a generic function to add sections to input file
-    # Emissivity coefficients
-    if 'emisCoeffs' in parametersDict:
-
-        section = 'emissivity_fitting_coefficients'
-        if output_cfg.has_section(section) is False:
-            output_cfg.add_section(section)
-
-        for lineLabel in parametersDict['emisCoeffs']:
-            value = parametersDict['emisCoeffs'][lineLabel]
-            value_formatted = formatConfEntry(value)
-            output_cfg.set(section, lineLabel, value_formatted)
-
-    # User input lines # TODO this might have to go to another place
-    if 'input_lines' in parametersDict:
-
-        section = 'inference_model_configuration'
-
-        if output_cfg.has_section(section) is False:
-            output_cfg.add_section(section)
-
-        value_formatted = formatConfEntry(parametersDict['input_lines'])
-        output_cfg.set(section, 'input_lines', value_formatted)
-
-    # User true parameter values
-    if 'true_values' in parametersDict:
-
-        section = 'true_values'
-
-        if output_cfg.has_section(section) is False:
-            output_cfg.add_section(section)
-
-        for item in parametersDict['true_values']:
-            value_formatted = formatConfEntry(parametersDict['true_values'][item])
-            output_cfg.set(section, f'{item}', value_formatted)
-
-    # Safe the configuration file
-    with open(fileAddress, 'w') as f:
-        output_cfg.write(f)
 
     return
 
@@ -632,7 +734,11 @@ def generate_object_mask(linesDf, wavelength, linelabels):
 
 
 # Function to label the lines provided by the user
-def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=None, exclude_lines=None, remove_neg=True):
+def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=None, exclude_lines=None,
+                              remove_neg=True):
+
+
+
     """
     Read emission line fluxes table
 
@@ -654,7 +760,7 @@ def import_emission_line_data(linesLogAddress=None, linesDF=None, include_lines=
     :rtype: pd.DataFrame
     """
 
-    # TODO include the gaussian/integr distinction
+    # TODO include the gaussian/integr distinction, normalize option, warning option for error in lime logs
     # Output DF # TODO we need to replace for a open excel format
     if linesDF is None:
         try:
@@ -696,7 +802,7 @@ def import_optical_depth_coeff_table(file_address):
 
 # Function to save PYMC3 simulations using pickle
 def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
-    if sampler is 'pymc3':
+    if sampler == 'pymc3':
         with open(db_address, 'wb') as trace_pickle:
             pickle.dump({'model': model, 'trace': trace}, trace_pickle)
 
@@ -704,9 +810,8 @@ def save_MC_fitting(db_address, trace, model, sampler='pymc3'):
 
 
 # Function to restore PYMC3 simulations using pickle
-def load_MC_fitting(output_address, ext_name='', output_format='pickle'):
-
-    #TODO make this a class
+def load_fit_results(output_address, ext_name='', output_format='pickle'):
+    # TODO make this a class
 
     db_address = Path(output_address)
 
@@ -729,26 +834,108 @@ def load_MC_fitting(output_address, ext_name='', output_format='pickle'):
 
     return fit_results
 
-# def load_MC_fitting(output_address):
-#
-#     db_address = Path(output_address)
-#
-#     # Output dictionary with the results
-#     fit_results = {}
-#
-#     # Restore the pymc output file
-#     with open(db_address, 'rb') as trace_restored:
-#         db = pickle.load(trace_restored)
-#
-#     model_reference, trace = db['model'], db['trace']
-#     fit_results.update(db)
-#
-#     # Restore the input data file
-#     configFileAddress = db_address.with_suffix('.txt')
-#     output_dict = loadConfData(configFileAddress, group_variables=False)
-#
-#     for key in ['Input_data', 'Fitting_results', 'Simulation_fluxes']:
-#         if key in output_dict:
-#             fit_results[key] = output_dict[key]
-#
-#     return fit_results
+
+# Function to save the PYMC3 simulation as a fits log
+def fits_db(fits_address, model_db, ext_name='', header=None):
+
+    line_labels = model_db['inputs']['line_list']
+    params_traces = model_db['outputs']
+
+    sec_label = 'synthetic_fluxes' if ext_name == '' else f'{ext_name}_synthetic_fluxes'
+
+    # ---------------------------------- Input data
+
+    # Data
+    list_columns = []
+    for data_label, data_format in FITS_INPUTS_EXTENSION.items():
+        data_array = model_db['inputs'][data_label]
+        data_col = fits.Column(name=data_label, format=data_format, array=data_array)
+        list_columns.append(data_col)
+
+    # Header
+    hdr_dict = {}
+    for i_line, lineLabel in enumerate(line_labels):
+        hdr_dict[f'hierarch {lineLabel}'] = model_db['inputs']['line_fluxes'][i_line]
+        hdr_dict[f'hierarch {lineLabel}_err'] = model_db['inputs']['line_err'][i_line]
+
+    # User values:
+    for key, value in header.items():
+        if key not in ['logP_values', 'r_hat']:
+            hdr_dict[f'hierarch {key}'] = value
+
+    # Inputs extension
+    cols = fits.ColDefs(list_columns)
+    sec_label = 'inputs' if ext_name == '' else f'{ext_name}_inputs'
+    hdu_inputs = fits.BinTableHDU.from_columns(cols, name=sec_label, header=fits.Header(hdr_dict))
+
+    # ---------------------------------- Output data
+    params_list = model_db['inputs']['parameter_list']
+    param_matrix = np.array([params_traces[param] for param in params_list])
+    param_col = fits.Column(name='parameters_list', format=FITS_OUTPUTS_EXTENSION['parameter_list'], array=params_list)
+    param_val = fits.Column(name='parameters_fit', format='E', array=param_matrix.mean(axis=1))
+    param_err = fits.Column(name='parameters_err', format='E', array=param_matrix.std(axis=1))
+    list_columns = [param_col, param_val, param_err]
+
+    # Header
+    hdr_dict = {}
+    for i, param in enumerate(params_list):
+        param_trace = params_traces[param]
+        hdr_dict[f'hierarch {param}'] = np.mean(param_trace)
+        hdr_dict[f'hierarch {param}_err'] = np.std(param_trace)
+
+    for lineLabel in line_labels:
+        param_trace = params_traces[lineLabel]
+        hdr_dict[f'hierarch {lineLabel}'] = np.mean(param_trace)
+        hdr_dict[f'hierarch {lineLabel}_err'] = np.std(param_trace)
+
+    # # Data
+    # param_array = np.array(list(params_traces.keys()))
+    # paramMatrix = np.array([params_traces[param] for param in param_array])
+    #
+    # list_columns.append(fits.Column(name='parameter', format='20A', array=param_array))
+    # list_columns.append(fits.Column(name='mean', format='E', array=np.mean(paramMatrix, axis=0)))
+    # list_columns.append(fits.Column(name='std', format='E', array=np.std(paramMatrix, axis=0)))
+    # list_columns.append(fits.Column(name='median', format='E', array=np.median(paramMatrix, axis=0)))
+    # list_columns.append(fits.Column(name='p16th', format='E', array=np.percentile(paramMatrix, 16, axis=0)))
+    # list_columns.append(fits.Column(name='p84th', format='E', array=np.percentile(paramMatrix, 84, axis=0)))
+
+    cols = fits.ColDefs(list_columns)
+    sec_label = 'outputs' if ext_name == '' else f'{ext_name}_outputs'
+    hdu_outputs = fits.BinTableHDU.from_columns(cols, name=sec_label, header=fits.Header(hdr_dict))
+
+    # ---------------------------------- traces data
+    list_columns = []
+
+    # Data
+    for param, trace_array in params_traces.items():
+        col_trace = fits.Column(name=param, format='E', array=params_traces[param])
+        list_columns.append(col_trace)
+
+    cols = fits.ColDefs(list_columns)
+
+    # Header fitting properties
+    hdr_dict = {}
+    for stats_dict in ['logP_values', 'r_hat']:
+        if stats_dict in header:
+            for key, value in header[stats_dict].items():
+                hdr_dict[f'hierarch {key}_{stats_dict}'] = value
+
+    sec_label = 'traces' if ext_name == '' else f'{ext_name}_traces'
+    hdu_traces = fits.BinTableHDU.from_columns(cols, name=sec_label, header=fits.Header(hdr_dict))
+
+    # ---------------------------------- Save fits files
+    hdu_list = [hdu_inputs, hdu_outputs, hdu_traces]
+
+    if fits_address.is_file():
+        for hdu in hdu_list:
+            try:
+                fits.update(fits_address, data=hdu.data, header=hdu.header, extname=hdu.name, verify=True)
+            except KeyError:
+                fits.append(fits_address, data=hdu.data, header=hdu.header, extname=hdu.name)
+    else:
+        hdul = fits.HDUList([fits.PrimaryHDU()] + hdu_list)
+        hdul.writeto(fits_address, overwrite=True, output_verify='fix')
+
+    return
+
+

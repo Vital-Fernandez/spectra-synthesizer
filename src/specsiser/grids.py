@@ -1,9 +1,8 @@
 import numpy as np
-from ..physical_model.gasEmission_functions import gridInterpolatorFunction
 import exoplanet as xo
 
-# Function to read the ionization data
-def load_ionization_grid(log_scale=False, log_zero_value = -1000):
+
+def load_HII_CHI_MISTRY_grid(log_scale=False, log_zero_value = -1000):
 
     # grid_file = 'D:/Dropbox/Astrophysics/Tools/HCm-Teff_v5.01/C17_bb_Teff_30-90_pp.dat'
 
@@ -82,7 +81,7 @@ def gridInterpolatorFunction(interpolatorDict, x_range, y_range, z_range=None, i
     return emisInterpGrid
 
 
-class ModelGridWrapper:
+class GridWrapper:
 
     def __init__(self, grid_address=None):
 
@@ -111,13 +110,10 @@ class ModelGridWrapper:
             axes_cords[ax_name] = np.unique(grid_DF[ax_name].values)
             reshape_array[i] = axes_cords[ax_name].size
 
-
-
         # Declare grid data columns
         if data_columns == 'all':
             data_columns = grid_DF.columns[~grid_DF.columns.isin(axes_columns)].values
         axes_cords['data'] = data_columns
-        # Establish output format
 
         # mesh_dict
         if dict_output:
@@ -168,7 +164,7 @@ class ModelGridWrapper:
 
     def HII_Teff_models(self, obsLines, obsFluxes, obsErr):
 
-        gridLineDict, gridAxDict = load_ionization_grid(log_scale=True)
+        gridLineDict, gridAxDict = load_HII_CHI_MISTRY_grid(log_scale=True)
         self.gridInterp = gridInterpolatorFunction(gridLineDict,
                                                    gridAxDict['logU'],
                                                    gridAxDict['Teff'],
@@ -206,4 +202,3 @@ class ModelGridWrapper:
             self.grid_emissionFluxErrs = obsErr.copy()
 
         return
-

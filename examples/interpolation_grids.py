@@ -8,7 +8,7 @@ import exoplanet as xo
 import time
 from astropy.io import fits
 from astropy.table import Table
-from astro.data.muse.common_methods import grid_HII_CHI_mistry_conversion as labelConver, grid_columns
+from astro.data.muse.common_methods import grid_columns
 from astro.papers.gtc_greenpeas.common_methods import epm_HII_CHI_mistry
 
 
