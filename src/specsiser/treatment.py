@@ -116,7 +116,7 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
             self.idx_analysis_lines = np.zeros(self.lineLabels.size)
 
             # High and low temperature distinction
-            self.lowTemp_check = any(T_low_diag in lineLabel for lineLabel in self.lineLabels)
+            self.lowTemp_check = any(T_low_diag in lineLabel for lineLabel in self.lineLabels) # TODO Change this for the intercept method
             self.highTemp_check = any(T_high_diag in lineLabel for lineLabel in self.lineLabels)
 
             # Index the lines
