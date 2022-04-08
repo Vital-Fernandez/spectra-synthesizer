@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 import lime
-import pyneb as pn
-
 
 import src.specsiser as sr
 from timeit import default_timer as timer

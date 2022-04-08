@@ -46,7 +46,7 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
         self.idcs_highTemp_ions = None
         self.grid_check = grid_sampling
 
-        # Indeces
+        # Indexes
         self.indcsLabelLines = {}
         self.indcsIonLines = {}
         self.idcs_highTemp_ions = None
@@ -64,8 +64,7 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
         # Output container
         self.fit_results = None
 
-    def define_region(self, line_labels, line_fluxes, line_errs, lineFlambda=None, comp_dict=None,
-                      minErr=0.02):
+    def define_region(self, line_labels, line_fluxes, line_errs, lineFlambda=None, comp_dict=None, minErr=0.02):
 
         # Lines data
         ion_array, wave_array, latexLabel_array = label_decomposition(line_labels)
@@ -97,8 +96,8 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
 
         return
 
-    def simulation_configuration(self, prior_conf_dict, highTempIons=None, T_low_diag='S3_6312A',
-                                 T_high_diag='O3_4363A', verbose=True,):
+    def simulation_configuration(self, prior_conf_dict, highTempIons=None, T_low_diag='S3_6312A', T_high_diag='O3_4363A',
+                                 verbose=True,):
 
         # Priors configuration
         for key, value in prior_conf_dict.items():
@@ -130,7 +129,6 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
         # self.idcs_highTemp_ions = chemistry_model.indcsHighTemp # TODO this is dangerous repeat out
 
         if verbose:
-            print(f'\n- Input lines ({self.lineLabels.size})')
             for i in range(self.lineLabels.size):
                 print(f'-- {self.lineLabels[i]} '
                       f'({self.lineIons[i]})'

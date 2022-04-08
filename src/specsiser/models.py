@@ -269,7 +269,6 @@ class PhotoIonizationModels(EmissionTensors):
 
                 # Declare line properties
                 lineLabel = self.lineLabels[i]
-                lineFlambda = self.lineFlambda[i]
                 lineInt = self.gridInterp[lineLabel](grid_coord)[0]
 
                 # Line Intensity
