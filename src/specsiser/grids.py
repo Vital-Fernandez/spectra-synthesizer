@@ -108,6 +108,7 @@ class GridWrapper:
         reshape_array = np.zeros(len(axes_columns)).astype(int)
         for i, ax_name in enumerate(axes_columns):
             axes_cords[ax_name] = np.unique(grid_DF[ax_name].values)
+            print(ax_name, axes_cords[ax_name], f'length ({len(axes_cords[ax_name])})')
             reshape_array[i] = axes_cords[ax_name].size
 
         # Declare grid data columns
