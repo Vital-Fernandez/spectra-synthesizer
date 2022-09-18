@@ -12,7 +12,6 @@ from .models import EmissionTensors
 from .components.extinction_model import flambda_calc, ExtinctionModel
 from .grids import GridWrapper
 from .treatment import emissivity_grid_calc, SpectraSynthesizer
-from .plots import plot_traces, plot_flux_grid, plot_corner, table_fluxes, table_params
 
 # Get python version being used
 __python_version__ = sys.version_info

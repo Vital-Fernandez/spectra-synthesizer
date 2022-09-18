@@ -3,7 +3,7 @@ import pandas as pd
 from matplotlib import pyplot as plt, cm, rcParams, rcParamsDefault, colors, gridspec
 from matplotlib.mlab import detrend_mean
 from lime import label_decomposition
-from lime.plots import PdfMaker
+from lime.tables import PdfMaker
 import corner
 
 background_color = np.array((43, 43, 43))/255.0
