@@ -8,9 +8,9 @@ import configparser
 from lime import load_cfg
 
 from .inout import safeConfData, load_fit_results
-from .models import EmissionTensors
+# from .models import EmissionTensors
 from .components.extinction_model import flambda_calc, ExtinctionModel
-from .grids import GridWrapper
+# from .grids import GridWrapper
 from .treatment import emissivity_grid_calc, SpectraSynthesizer
 
 # Get python version being used
