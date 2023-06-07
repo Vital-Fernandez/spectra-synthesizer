@@ -20,7 +20,7 @@ CONFIGPATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'default.
 STRINGCONFKEYS = ['sampler', 'reddenig_curve', 'norm_line_label', 'norm_line_pynebCode']
 GLOBAL_LOCAL_GROUPS = ['_line_fitting', '_chemical_model']
 
-FITS_INPUTS_EXTENSION = {'line_list': '20A', 'line_fluxes': 'E', 'line_err': 'E'}
+FITS_INPUTS_EXTENSION = {'lines_list': '20A', 'line_fluxes': 'E', 'line_err': 'E'}
 FITS_OUTPUTS_EXTENSION = {'parameter_list': '20A',
                           'mean': 'E',
                           'std': 'E',
@@ -838,7 +838,7 @@ def load_fit_results(output_address, ext_name='', output_format='pickle'):
 # Function to save the PYMC3 simulation as a fits log
 def fits_db(fits_address, model_db, ext_name='', header=None):
 
-    line_labels = model_db['inputs']['line_list']
+    line_labels = model_db['inputs']['lines_list']
     params_traces = model_db['outputs']
 
     sec_label = 'synthetic_fluxes' if ext_name == '' else f'{ext_name}_synthetic_fluxes'

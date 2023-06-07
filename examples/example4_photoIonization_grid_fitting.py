@@ -80,7 +80,7 @@ for i, logOH in enumerate(logOH_range):
 
             # Load the results
             fit_results = sr.load_fit_results(outputFits, ext_name=cord_label, output_format='fits')
-            inLines = fit_results[f'{cord_label}_inputs'][0]['line_list']
+            inLines = fit_results[f'{cord_label}_inputs'][0]['lines_list']
             inParameters = fit_results[f'{cord_label}_outputs'][0]['parameters_list']
             inFlux = fit_results[f'{cord_label}_inputs'][0]['line_fluxes']
             inErr = fit_results[f'{cord_label}_inputs'][0]['line_err']

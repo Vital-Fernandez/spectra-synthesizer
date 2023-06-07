@@ -175,7 +175,7 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
             input_data = self.fit_results['inputs']
             sec_label = 'inputs' if ext_name == '' else f'{ext_name}_inputs'
             sec_dict = {}
-            for i, lineLabel in enumerate(input_data['line_list']):
+            for i, lineLabel in enumerate(input_data['lines_list']):
                 lineFlux, lineErr = input_data['line_fluxes'][i], input_data['line_err'][i]
                 sec_dict[lineLabel] = np.array([lineFlux, lineErr])
             sec_dict['parameter_list'] = input_data['parameter_list']
@@ -192,7 +192,7 @@ class SpectraSynthesizer(GridWrapper, PhotoIonizationModels):
             # Synthetic fluxes
             sec_label = 'synthetic_fluxes' if ext_name == '' else f'{ext_name}_synthetic_fluxes'
             sec_dict = {}
-            for lineLabel in self.fit_results['inputs']['line_list']:
+            for lineLabel in self.fit_results['inputs']['lines_list']:
                 line_trace = self.fit_results['outputs'][lineLabel]
                 sec_dict[lineLabel] = np.array([np.mean(line_trace), np.std(line_trace)])
             parseConfDict(str(output_address), sec_dict, section_name=sec_label, clear_section=True)

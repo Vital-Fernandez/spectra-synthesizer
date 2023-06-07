@@ -458,7 +458,7 @@ class PhotoIonizationModels(EmissionTensors):
                     output_dict[param] = trace_array
 
         # ---------------------------- Save inputs
-        inputs = {'line_list': self.lineLabels,
+        inputs = {'lines_list': self.lineLabels,
                   'line_fluxes': self.emissionFluxes,
                   'line_err': self.emissionErr,
                   'parameter_list': model_params}

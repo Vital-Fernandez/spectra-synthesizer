@@ -56,7 +56,7 @@ obj1_model.save_fit(output_db)
 
 # Load the results
 fit_pickle = sr.load_fit_results(output_db)
-inLines, inParameters = fit_pickle['inputs']['line_list'], fit_pickle['inputs']['parameter_list']
+inLines, inParameters = fit_pickle['inputs']['lines_list'], fit_pickle['inputs']['parameter_list']
 inFlux, inErr = fit_pickle['inputs']['line_fluxes'].astype(float), fit_pickle['inputs']['line_err'].astype(float)
 traces_dict = fit_pickle['outputs']
 
