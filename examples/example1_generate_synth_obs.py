@@ -3,7 +3,6 @@ import pandas as pd
 import src.specsiser as sr
 
 from pathlib import Path
-from lime import label_decomposition
 from src.specsiser.components.chemical_model import TOIII_from_TSIII_relation
 
 # Use the default user folder to store the results

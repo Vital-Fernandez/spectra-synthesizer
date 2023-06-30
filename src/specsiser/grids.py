@@ -1,6 +1,4 @@
 import numpy as np
-import exoplanet as xo
-
 
 def load_HII_CHI_MISTRY_grid(log_scale=False, log_zero_value = -1000):
 

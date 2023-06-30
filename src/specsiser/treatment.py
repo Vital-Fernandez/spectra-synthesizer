@@ -14,8 +14,7 @@ def emissivity_grid_calc(lines_array, comp_dict, temp_grid_points=(9000, 20000, 
     print(f'- Computing emissivity grids for {len(lines_array)} lines\n')
 
     # Compute the atomic data grids
-    objIons = IonEmissivity(tempGrid=temp_grid_points,
-                            denGrid=den_grid_points)
+    objIons = IonEmissivity(tempGrid=temp_grid_points, denGrid=den_grid_points)
 
     ion_array, wave_array, latex_array = label_decomposition(lines_array, comp_dict=comp_dict)
 
